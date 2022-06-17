@@ -71,16 +71,6 @@ def direct_link_generator(link: str):
         return github(link)
     elif "hxfile.co" in link:
         return hxfile(link)
-    elif "files.im" in link:
-        return filesIm(link)
-    elif "linkpoi" in link:
-        return linkpoi(link)
-    elif "mirrored" in link:
-        return mirrored(link)
-    elif "reupload" in link:
-        return reupload(link)
-    elif "uservideo" in link:
-        return uservideo(link)
     elif "anonfiles.com" in link:
         return anonfiles(link)
     elif "letsupload.io" in link:
@@ -133,14 +123,6 @@ def direct_link_generator(link: str):
         return drivefire_dl(link)
     elif "gofile.io" in link:
         return gofile_ddl(link)
-    elif "megaup.net" in link:
-        return megaup_dl(link)
-    elif "mdisk" in link:
-        return mdisk_ddl(link)
-    elif "wetransfer.com" in link or "we.tl" in link:
-        return wetransfer_ddl(link)
-    elif "sharer.pw" in link:
-        return sharerpw_dl(link)
     elif any(x in link for x in fmed_list):
         return fembed(link)
     elif any(
