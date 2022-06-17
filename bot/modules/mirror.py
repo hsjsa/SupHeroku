@@ -1,5 +1,5 @@
 from base64 import b64encode
-from requests import utils as rutils
+from requests import utils as rutils, get as rget
 from re import match as re_match, search as re_search, split as re_split
 from time import sleep, time
 from os import path as ospath, remove as osremove, listdir, walk
@@ -11,8 +11,10 @@ from html import escape
 from telegram.ext import CommandHandler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from bot import bot, Interval, INDEX_URL, BUTTON_FOUR_NAME, BUTTON_FOUR_URL, BUTTON_FIVE_NAME, BUTTON_FIVE_URL, \
-                BUTTON_SIX_NAME, BUTTON_SIX_URL, VIEW_LINK, aria2, QB_SEED, dispatcher, DOWNLOAD_DIR, \
-                download_dict, download_dict_lock, TG_SPLIT_SIZE, LOGGER, MEGA_KEY, DB_URI, INCOMPLETE_TASK_NOTIFIER, SOURCE_LINK, BOT_PM, LEECH_LOG, MIRROR_LOGS
+                BUTTON_SIX_NAME, BUTTON_SIX_URL, VIEW_LINK, aria2, QB_SEED, dispatcher, DOWNLOAD_DIR, FSUB_CHANNEL_ID,\
+                LEECH_LOG_LINK, MAKE_OWNER_AND_SUDO_ANONYMOUS, OWNER_ID, SUDO_USERS, FSUB, FSUB_CHANNELLINK, ACTIVE_TASK_LIMIT, \
+                download_dict, download_dict_lock, TG_SPLIT_SIZE, LOGGER, DB_URI, INCOMPLETE_TASK_NOTIFIER, MEGAREST, LEECH_LOG, MIRROR_LOGS, \
+                LEECH_PM, SUDO_ONLY_MIRROR, SUDO_ONLY_LEECH
 from bot.helper.ext_utils.bot_utils import is_url, is_magnet, is_gdtot_link, is_mega_link, is_gdrive_link, get_content_type
 from bot.helper.ext_utils.fs_utils import get_base_name, get_path_size, split_file, clean_download
 from bot.helper.ext_utils.shortenurl import short_url
@@ -20,7 +22,8 @@ from bot.helper.ext_utils.exceptions import DirectDownloadLinkException, NotSupp
 from bot.helper.mirror_utils.download_utils.aria2_download import add_aria2c_download
 from bot.helper.mirror_utils.download_utils.gd_downloader import add_gd_download
 from bot.helper.mirror_utils.download_utils.qbit_downloader import QbDownloader
-from bot.helper.mirror_utils.download_utils.mega_downloader import MegaDownloader
+from bot.helper.mirror_utils.download_utils.mega_downloader import add_mega_download
+from bot.helper.mirror_utils.download_utils.megarestsdkhelper import MegaDownloadeHelper
 from bot.helper.mirror_utils.download_utils.direct_link_generator import direct_link_generator
 from bot.helper.mirror_utils.download_utils.telegram_downloader import TelegramDownloadHelper
 from bot.helper.mirror_utils.status_utils.extract_status import ExtractStatus
@@ -193,66 +196,280 @@ class MirrorListener:
             DbManger().rm_complete_task(self.message.link)
 
     def onUploadComplete(self, link: str, size, files, folders, typ, name: str):
-        buttons = ButtonMaker()
-        # this is inspired by def mirror to get the link from message
-        mesg = self.message.text.split('\n')
-        message_args = mesg[0].split(' ', maxsplit=1)
-        reply_to = self.message.reply_to_message
+        uname = f'<a href="tg://user?id={self.message.from_user.id}">{self.message.from_user.first_name}</a>'
         if not self.isPrivate and INCOMPLETE_TASK_NOTIFIER and DB_URI is not None:
             DbManger().rm_complete_task(self.message.link)
         msg = f"<b>Name: </b><code>{escape(name)}</code>\n\n<b>Size: </b>{size}"
+        logmsg = f"<b>Name: </b><code>{escape(name)}</code>\n\n<b>Size: </b>{size}"
+        mesg2 = self.message.text.split('\n')
+        messageargs2 = mesg2[0].split(' ', maxsplit=1)
+        replyto = self.message.reply_to_message
         if self.isLeech:
-            try:
-                source_link = message_args[1]
-                if is_magnet(source_link):
-                    link = telegraph.create_page(
-                        title='Helios-Mirror Source Link',
-                        content=source_link,
-                    )["path"]
-                    buttons.buildbutton(f"🔗 Source Link", f"https://telegra.ph/{link}")
-                else:
-                    buttons.buildbutton(f"🔗 Source Link", source_link)
-            except Exception as e:
-                LOGGER.warning(e)
-                pass
-                if reply_to is not None:
-                    try:
-                        reply_text = reply_to.text
-                        if is_url(reply_text):
-                            source_link = reply_text.strip()
-                            if is_magnet(source_link):
-                                link = telegraph.create_page(
-                                    title='Helios-Mirror Source Link',
-                                    content=source_link,
-                                )["path"]
-                                buttons.buildbutton(f"🔗 Source Link", f"https://telegra.ph/{link}")
-                            else:
-                                buttons.buildbutton(f"🔗 Source Link", source_link)
-                    except Exception as e:
-                        LOGGER.warning(e)
-                        pass
-            msg += f'\n<b>Total Files: </b>{folders}'
+            user_id = self.message.from_user.id
+            bot_d = bot.get_me()
+            bot_username = bot_d.username
+            checkbot = f"http://t.me/{bot_username}"
+            leechloginvite = f"{LEECH_LOG_LINK}"
+
+            leechresult = f"\n<b><i>{uname}</i></b>\n"
+            leechresult += f"<b><i>Your File's Are Successfully Leeched And Sent To Your PM And Leech Log Chat.</i></b>"
+            leechresult += f"\n<b><i>Click Below Button To Join Leech Log Chat or Check Your PM</i></b>"
+
+            leechlogbutton = ButtonMaker()
+            leechlogbutton.buildbutton("Log Chat", f"{leechloginvite}")
+            leechlogbutton.buildbutton("Check PM", f"{checkbot}")
+            
+            user_id = self.message.from_user.id
+            if user_id == OWNER_ID:
+                ownerorsudo = f"Owner"
+            else:
+                ownerorsudo = f"Sudo User"
+            ownerleechresult = f"<b>Dear {ownerorsudo} I Have Sent Your #Leeched File's In Your PM</b>"
+            ownerleechbutton = ButtonMaker()
+            ownerleechbutton.buildbutton("Check Now", checkbot)
+
+            msg += f'\n\n<b>Total Files: </b>{folders}'
+            logmsg += f'\n\n<b>Total Files: </b>{folders}'
             if typ != 0:
                 msg += f'\n<b>Corrupted Files: </b>{typ}'
-            msg += f'\n<b>cc: </b>{self.tag}\n\n'
+                logmsg += f'\n<b>Corrupted Files: </b>{typ}'
+            if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                            user_id = self.message.from_user.id
+                            if (
+                               user_id in SUDO_USERS or user_id == OWNER_ID
+                            ):
+                              msg += f'\n\n<b>cc:</b> <b><i><a href="tg://settings/">Anonymous</a></i></b>\n\n'
+                              logmsg += f'\n\n<b>cc:</b> <b><i><a href="tg://settings/">Anonymous</a></i></b>'
+                            else:
+                              msg += f'\n\n<b>cc: </b>{self.tag}\n\n'
+                              logmsg += f'\n\n<b>cc:</b> <b><a href="{self.message.link}">{self.message.from_user.first_name}</a></b>'
+                              pass    
+            else:
+                msg += f'\n\n<b>cc: </b>{self.tag}\n\n'
+                logmsg += f'\n\n<b>cc:</b> <b><a href="{self.message.link}">{self.message.from_user.first_name}</a></b>'
+            
             if not files:
-                sendMessage(msg, self.bot, self.message)
+                if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                    user_id = self.message.from_user.id
+                    if (
+                        user_id in SUDO_USERS or user_id == OWNER_ID
+                        ):
+                          LOGGER.info(f'Anonymous owner turned on and Files are Leeched by owner i wont send them on chat')
+                          owner = sendMarkup(ownerleechresult, self.bot, self.message, InlineKeyboardMarkup(ownerleechbutton.build_menu(1)))
+                          Thread(target=auto_delete_message, args=(self.bot, self.message, owner)).start()
+                          try:
+                              sendMessage(self.message.from_user.id, msg, self.bot, self.message)
+                          except:
+                              pass
+                    else:
+                        fmsglink = sendMessage(msg, self.bot, self.message) 
+                        result = sendMarkup(leechresult, self.bot, self.message, InlineKeyboardMarkup(leechlogbutton.build_menu(1)))
+                        Thread(target=auto_delete_message, args=(self.bot, self.message, result)).start()
+                else:
+                    fmsglink = sendMessage(msg, self.bot, self.message) 
+                    result = sendMarkup(leechresult, self.bot, self.message, InlineKeyboardMarkup(leechlogbutton.build_menu(1)))
+                    Thread(target=auto_delete_message, args=(self.bot, self.message, result)).start()
+                    pass
+
             else:
                 fmsg = ''
                 for index, (link, name) in enumerate(files.items(), start=1):
-                    fmsg += f"{index}. <a href='{link}'>{name}</a>\n"
+                    fmsg += f"🚩 {index}. <a href='{link}'>{name}</a>\n"
                     if len(fmsg.encode() + msg.encode()) > 4000:
-                        sendMarkup(msg + fmsg, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
-                        sleep(1)
+                        if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                            user_id = self.message.from_user.id
+                            if (
+                            user_id in SUDO_USERS or user_id == OWNER_ID
+                            ):
+                              LOGGER.info(f'Anonymous owner turned on and Files are Leeched by owner i wont send them on chat ')
+                              owner = sendMarkup(ownerleechresult, self.bot, self.message, InlineKeyboardMarkup(ownerleechbutton.build_menu(1)))
+                              Thread(target=auto_delete_message, args=(self.bot, self.message, owner)).start()
+                              try:
+                                  sendMessage(self.message.from_user.id, msg, self.bot, self.message)
+                              except:
+                                    pass
+                            else:
+                                 fmsglink = sendMessage(msg + fmsg, self.bot, self.message)
+                                 result = sendMarkup(leechresult, self.bot, self.message, InlineKeyboardMarkup(leechlogbutton.build_menu(1)))
+                                 Thread(target=auto_delete_message, args=(self.bot, self.message, result)).start()
+                                 pass
+                        else:
+                            fmsglink = sendMessage(msg + fmsg, self.bot, self.message)
+                            result = sendMarkup(leechresult, self.bot, self.message, InlineKeyboardMarkup(leechlogbutton.build_menu(1)))
+                            Thread(target=auto_delete_message, args=(self.bot, self.message, result)).start()
+                            sleep(1)
+                            pass
                         fmsg = ''
                 if fmsg != '':
-                    sendMarkup(msg + fmsg, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
+                    if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                            user_id = self.message.from_user.id
+                            if (
+                               user_id in SUDO_USERS or user_id == OWNER_ID
+                               ):
+                                LOGGER.info(f'Anonymous owner turned on and Files are Leeched by owner i wont send them on chat')
+                                owner = sendMarkup(ownerleechresult, self.bot, self.message, InlineKeyboardMarkup(ownerleechbutton.build_menu(1)))
+                                Thread(target=auto_delete_message, args=(self.bot, self.message, owner)).start()
+                                pass
+                                try:
+                                  sendMessage(self.message.from_user.id, msg, self.bot, self.message)
+                                except:
+                                      pass
+                            else:
+                                fmsglink = sendMessage(msg + fmsg, self.bot, self.message)
+                                result = sendMarkup(leechresult, self.bot, self.message, InlineKeyboardMarkup(leechlogbutton.build_menu(1)))
+                                Thread(target=auto_delete_message, args=(self.bot, self.message, result)).start()
+                                pass
+                    else:
+                        sendMessage(msg + fmsg, self.bot, self.message)
+                        result = sendMarkup(leechresult, self.bot, self.message, InlineKeyboardMarkup(leechlogbutton.build_menu(1)))
+                        Thread(target=auto_delete_message, args=(self.bot, self.message, result)).start()
+                        pass
+            if MIRROR_LOGS:
+                if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                    user_id = self.message.from_user.id
+                    if (
+                        user_id in SUDO_USERS or user_id == OWNER_ID
+                        ):
+                        LOGGER.info(f'Anonymous owner turned on and Files are Leeched by owner i wont send indexfmsg on mirror logs')
+                        pass
+                    else:
+                        try:
+                            inndexmsglink = fmsglink.link
+                            sourcelink = messageargs2[1]
+                            sourceleechmsg = f"<b>#Leeched</b>\n"
+                            sourceleechmsg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                            sourceleechmsg += f"ㅤㅤ ㅤ <b>«Leeched Info»</b>\n"
+                            msg1 = f'\n{logmsg}'
+                            msg1 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                            if sourcelink.startswith('magnet:'):
+                                sourceleechbutton = f'http://t.me/share/url?url={sourcelink}'
+                            else:
+                                sourceleechbutton = f'{sourcelink}'
+                            sourcebuttons = ButtonMaker()
+                            sourcebuttons.buildbutton("Source", f"{sourceleechbutton}")
+                            sourcebuttons.buildbutton("All Files", f"{inndexmsglink}")
+                            sourcelinkbutton = InlineKeyboardMarkup(sourcebuttons.build_menu(1))
+                            for i in MIRROR_LOGS:
+                                bot.sendMessage(i, text=sourceleechmsg + msg1, reply_markup=sourcelinkbutton, parse_mode=ParseMode.HTML)
+                        except IndexError:
+                            pass
+                        if replyto is not None:
+                            try:
+                                reply_text = replyto.text
+                                if is_url(reply_text):
+                                    inndexmsglink = fmsglink.link
+                                    source_link = reply_text.strip()
+                                    sourceleechmsg2 = f"<b>#Leeched</b>\n"
+                                    sourceleechmsg2 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                    sourceleechmsg2 += f"ㅤㅤ ㅤ <b>«Leeched Info»</b>\n"
+                                    msg2 = f'\n{logmsg} '
+                                    msg2 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                    if source_link.startswith('magnet:'):
+                                       sourceleechbutton = f'http://t.me/share/url?url={source_link}'
+                                    else:
+                                       sourceleechbutton = f'{source_link}'
+                                    sourcebuttons = ButtonMaker()
+                                    sourcebuttons.buildbutton("Source", f"{sourceleechbutton}")
+                                    sourcebuttons.buildbutton("All Files", f"{inndexmsglink}")
+                                    sourcelinkbutton2 = InlineKeyboardMarkup(sourcebuttons.build_menu(1))
+                                    for i in MIRROR_LOGS:
+                                        bot.sendMessage(i, text=sourceleechmsg2 + msg2, reply_markup=sourcelinkbutton2, parse_mode=ParseMode.HTML)
+                                        pass
+                            except:
+                                  for i in MIRROR_LOGS:
+                                      inndexmsglink = fmsglink.link
+                                      sourcefile_link = self.message.link
+                                      sourceleechmsg4 = f"<b>#Leeched</b>\n"
+                                      sourceleechmsg4 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                      sourceleechmsg4 += f"ㅤㅤ ㅤ <b>«Leeched Info»</b>\n"
+                                      msg3 = f'\n{logmsg}'
+                                      msg3 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                      sourcebuttons = ButtonMaker()
+                                      sourcebuttons.buildbutton("Source", f"{sourcefile_link}")
+                                      sourcebuttons.buildbutton("All Files", f"{inndexmsglink}")
+                                      sourcelinkbutton3 = InlineKeyboardMarkup(sourcebuttons.build_menu(1))
+                                      bot.sendMessage(chat_id=i, text=sourceleechmsg4 + msg3, reply_markup=sourcelinkbutton3, parse_mode=ParseMode.HTML)
+                                      pass
+                else:
+                    user_id = self.message.from_user.id
+                    inndexmsglink = fmsglink.link
+                    try:
+                        sourcelink = messageargs2[1]
+                        sourceleechmsg = f"<b>#Leeched</b>\n"
+                        sourceleechmsg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                        sourceleechmsg += f"ㅤㅤ ㅤ <b>«Leeched Info»</b>\n"
+                        msg1 = f'\n{logmsg}'
+                        msg1 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                        if sourcelink.startswith('magnet:'):
+                            sourceleechbutton = f'http://t.me/share/url?url={sourcelink}'
+                        else:
+                            sourceleechbutton = f'{sourcelink}'
+                        sourcebuttons = ButtonMaker()
+                        sourcebuttons.buildbutton("Source", f"{sourceleechbutton}")
+                        sourcebuttons.buildbutton("All Files", f"{inndexmsglink}")
+                        sourcelinkbutton = InlineKeyboardMarkup(sourcebuttons.build_menu(1))
+                        for i in MIRROR_LOGS:
+                            bot.sendMessage(i, text=sourceleechmsg + msg1, reply_markup=sourcelinkbutton, parse_mode=ParseMode.HTML)
+                    except IndexError:
+                        pass
+                    if replyto is not None:
+                            try:
+                               reply_text = replyto.text
+                               if is_url(reply_text): 
+                                  source_link = reply_text.strip()
+                                  sourceleechmsg2 = f"<b>#Leeched</b>\n"
+                                  sourceleechmsg2 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                  sourceleechmsg2 += f"ㅤㅤ ㅤ <b>«Leeched Info»</b>\n"
+                                  msg2 = f'\n{logmsg} '
+                                  msg2 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                  if source_link.startswith('magnet:'):
+                                     sourceleechbutton = f'http://t.me/share/url?url={source_link}'
+                                  else:
+                                     sourceleechbutton = f'{source_link}'
+                                  sourcebuttons = ButtonMaker()
+                                  sourcebuttons.buildbutton("Source", f"{sourceleechbutton}")
+                                  sourcebuttons.buildbutton("All Files", f"{inndexmsglink}")
+                                  sourcelinkbutton2 = InlineKeyboardMarkup(sourcebuttons.build_menu(1))
+                                  for i in MIRROR_LOGS:
+                                      bot.sendMessage(i, text=sourceleechmsg2 + msg2, reply_markup=sourcelinkbutton2, parse_mode=ParseMode.HTML)
+                                      pass
+                            except:
+                                  for i in MIRROR_LOGS:
+                                      sourcefile_link = self.message.link
+                                      sourceleechmsg4 = f"<b>#Leeched</b>\n"
+                                      sourceleechmsg4 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                      sourceleechmsg4 += f"ㅤㅤ ㅤ <b>«Leeched Info»</b>\n\n"
+                                      sourcebuttons = ButtonMaker()
+                                      sourcebuttons.buildbutton("Source", f"{sourcefile_link}")
+                                      sourcebuttons.buildbutton("All Files", f"{inndexmsglink}")
+                                      sourcelinkbutton3 = InlineKeyboardMarkup(sourcebuttons.build_menu(1))
+                                      bot.sendMessage(chat_id=i, text=sourceleechmsg4 + logmsg, reply_markup=sourcelinkbutton3, parse_mode=ParseMode.HTML)
+                                      pass
         else:
             msg += f'\n\n<b>Type: </b>{typ}'
+            logmsg += f'\n\n<b>Type: </b>{typ}'
+            user_id = self.message.from_user.id
             if ospath.isdir(f'{DOWNLOAD_DIR}{self.uid}/{name}'):
                 msg += f'\n<b>SubFolders: </b>{folders}'
+                logmsg += f'\n<b>SubFolders: </b>{folders}'
                 msg += f'\n<b>Files: </b>{files}'
-            msg += f'\n\n<b>cc: </b>{self.tag}'
+                logmsg += f'\n<b>Files: </b>{files}'
+            if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                            user_id = self.message.from_user.id
+                            if (
+                              user_id in SUDO_USERS or user_id == OWNER_ID
+                              ):
+                                msg += f'\n\n<b>cc:</b> <b><i><a href="tg://settings/">Anonymous</a></i></b>'
+                                logmsg += f'\n\n<b>cc:</b> <b><i><a href="tg://settings/">Anonymous</a></i></b>'
+                                pass
+                            else:
+                                msg += f'\n\n<b>cc: </b>{self.tag}'
+                                logmsg += f'\n\n<b>cc:</b> <b><a href="{self.message.link}">{self.message.from_user.first_name}</a></b>' 
+                                pass
+            else:
+                msg += f'\n\n<b>cc: </b>{self.tag}'
+                logmsg += f'\n\n<b>cc:</b> <b><a href="{self.message.link}">{self.message.from_user.first_name}</a></b>'
+
             buttons = ButtonMaker()
             link = short_url(link)
             buttons.buildbutton("☁️ Drive Link", link)
@@ -277,53 +494,180 @@ class MirrorListener:
                 buttons.buildbutton(f"{BUTTON_FIVE_NAME}", f"{BUTTON_FIVE_URL}")
             if BUTTON_SIX_NAME is not None and BUTTON_SIX_URL is not None:
                 buttons.buildbutton(f"{BUTTON_SIX_NAME}", f"{BUTTON_SIX_URL}")
-            if SOURCE_LINK is True:
-                try:
-                    source_link = message_args[1]
-                    if is_magnet(source_link):
-                        link = telegraph.create_page(
-                            title='Helios-Mirror Source Link',
-                            content=source_link,
-                        )["path"]
-                        buttons.buildbutton(f"🔗 Source Link", f"https://telegra.ph/{link}")
-                    else:
-                        buttons.buildbutton(f"🔗 Source Link", source_link)
-                except Exception as e:
-                    LOGGER.warning(e)
-                    pass
-            if reply_to is not None:
-                try:
-                    reply_text = reply_to.text
-                    if is_url(reply_text):
-                        source_link = reply_text.strip()
-                        if is_magnet(source_link):
-                            link = telegraph.create_page(
-                                title='Helios-Mirror Source Link',
-                                content=source_link,
-                            )["path"]
-                            buttons.buildbutton(f"🔗 Source Link", f"https://telegra.ph/{link}")
-                        else:
-                            buttons.buildbutton(f"🔗 Source Link", source_link)
-                except Exception as e:
-                    LOGGER.warning(e)
-                    pass
-            sendMarkup(msg, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
+
+            mesg = self.message.text.split('\n')
+            message_args = mesg[0].split(' ', maxsplit=1)
+            reply_to = self.message.reply_to_message
+            bot_d = bot.get_me()
+            bot_username = bot_d.username
+            checkbot = f"http://t.me/{bot_username}"
+
+            user_id = self.message.from_user.id
+            if user_id == OWNER_ID:
+               ownerorsudo = f"Owner"
+            else:
+               ownerorsudo = f"Sudo User"
+
+            ownerresult = f"<b>Dear {ownerorsudo} I Have Sent Your #Mirrored Link's In Your PM</b>"
+            ownerbutton = ButtonMaker()
+            ownerbutton.buildbutton("Check Now", checkbot)
+            
             if MIRROR_LOGS:
-                try:
-                    for chatid in MIRROR_LOGS:
-                        bot.sendMessage(chat_id=chatid, text=msg,
-                                        reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)),
-                                        parse_mode=ParseMode.HTML)
-                except Exception as e:
-                    LOGGER.warning(e)
-            if BOT_PM and self.message.chat.type != 'private':
-                try:
-                    bot.sendMessage(chat_id=self.user_id, text=msg,
-                                    reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)),
-                                    parse_mode=ParseMode.HTML)
-                except Exception as e:
-                    LOGGER.warning(e)
-                    return
+                user_id = self.message.from_user.id
+                if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                    if (
+                        user_id in SUDO_USERS or user_id == OWNER_ID
+                        ):
+                        LOGGER.info(f'Anonymous owner turned on and Files are Mirrored by owner i wont send them on mirror logs')
+                        pass
+                    else:
+                        try:
+                              sourcelink = message_args[1]
+                              sourcemirrormsg = f"<b>#Mirrored</b>\n"
+                              sourcemirrormsg += f"\n━━━━━━━━━━━━━━━━━━━━"
+                              if sourcelink.startswith('magnet:'):
+                                  sourcemirrormsg += f'\n<b>Source Url</b>: <b>Share Magnet To</b> <b><a href="http://t.me/share/url?url={sourcelink}">Telegram</a></b>'
+                              else:
+                                  sourcemirrormsg += f'\n<b>Source Url</b>: <b><a href="{sourcelink}">Here</a></b>'
+                              sourcemirrormsg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                              sourcemirrormsg += f"ㅤㅤ ㅤ  «<b>Mirrored info</b>»\n"
+                              msg1 = f'\n{logmsg} '
+                              msg1 += f'\n━━━━━━━━━━━━━━━━━━━━'
+                              for i in MIRROR_LOGS:
+                                  logmirresult = bot.sendMessage(i, text=sourcemirrormsg + msg1, reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                                  logmirresultlink = f'<a href="{logmirresult.link}">Log group</a>'
+                                  mirresult = f"{msg}\n"
+                                  mirresult += f"\n<b><i>This message saved in my</i></b> "
+                                  mirresult += f"<b><i>{logmirresultlink}</i></b>"
+                        except IndexError:
+                            pass
+                        if reply_to is not None:
+                            try:
+                                reply_text = reply_to.text
+                                if is_url(reply_text):
+                                   source_link = reply_text.strip()
+                                   sourcemirrormsg2 = f"<b>#Mirrored</b>\n"
+                                   sourcemirrormsg2 += f"\n━━━━━━━━━━━━━━━━━━━━"
+                                   if source_link.startswith('magnet:'):
+                                      sourcemirrormsg2 += f'\n<b>Source Url</b>: <b>Share Magnet To</b> <b><a href="http://t.me/share/url?url={source_link}">Telegram</a></b>'
+                                   else:
+                                      sourcemirrormsg2 += f'\n<b>Source Url</b>: <b><a href="{source_link}">Here</a></b>'
+                                   sourcemirrormsg2 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                   sourcemirrormsg2 += f"ㅤㅤ ㅤ  «<b>Mirrored info</b>»\n"
+                                   msg2 = f'\n{logmsg} '
+                                   msg2 += f'\n━━━━━━━━━━━━━━━━━━━━'
+                                   for i in MIRROR_LOGS:
+                                       logmirresult = bot.sendMessage(chat_id=i, text=sourcemirrormsg2 + msg2, reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                                       logmirresultlink = f'<a href="{logmirresult.link}">Log group</a>'
+                                       mirresult = f"{msg}\n"
+                                       mirresult += f"\n<b><i>This message saved in my</i></b> "
+                                       mirresult += f"<b><i>{logmirresultlink}</i></b>"
+                            except:
+                                   for i in MIRROR_LOGS:
+                                       sourcefile_link = self.message.link
+                                       sourcemirrormsg3 = f"<b>#Mirrored</b>\n"
+                                       sourcemirrormsg3 += f"\n━━━━━━━━━━━━━━━━━━━━"
+                                       sourcemirrormsg3 += f'\n<b>Source File:</b> <b><a href="{sourcefile_link}">Here</a></b>'
+                                       sourcemirrormsg3 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                       sourcemirrormsg3 += f"ㅤㅤ ㅤ  «<b>Mirrored info</b>»\n"
+                                       msg3 = f'\n{logmsg} '
+                                       msg3 += f'\n━━━━━━━━━━━━━━━━━━━━'
+                                       logmirresult = bot.sendMessage(chat_id=i, text=sourcemirrormsg3 + msg3, reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                                       logmirresultlink = f'<a href="{logmirresult.link}">Log group</a>'
+                                       mirresult = f"{msg}\n"
+                                       mirresult += f"\n<b><i>This message saved in my</i></b> "
+                                       mirresult += f"<b><i>{logmirresultlink}</i></b>"
+                                       pass
+                else:
+                    user_id = self.message.from_user.id
+                    try:
+                       sourcelink = message_args[1]
+                       sourcemirrormsg = f"<b>#Mirrored</b>\n"
+                       sourcemirrormsg += f"\n━━━━━━━━━━━━━━━━━━━━"
+                       if sourcelink.startswith('magnet:'):
+                           sourcemirrormsg += f'\n<b>Source Url</b>: <b>Share Magnet To</b> <b><a href="http://t.me/share/url?url={sourcelink}">Telegram</a></b>'
+                       else:
+                           sourcemirrormsg += f'\n<b>Source Url</b>: <b><a href="{sourcelink}">Here</a></b>'
+                       sourcemirrormsg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                       sourcemirrormsg += f"ㅤㅤ ㅤ  «<b>Mirrored info</b>»\n"
+                       msg1 = f'\n{logmsg} '
+                       msg1 += f'\n━━━━━━━━━━━━━━━━━━━━'
+                       for i in MIRROR_LOGS:
+                           logmirresult = bot.sendMessage(i, text=sourcemirrormsg + msg1, reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                           logmirresultlink = f'<a href="{logmirresult.link}">Log group</a>'
+                           mirresult = f"{msg}\n"
+                           mirresult += f"\n<b><i>This message saved in my</i></b> "
+                           mirresult += f"<b><i>{logmirresultlink}</i></b>"
+                    except IndexError:
+                      pass
+                    if reply_to is not None:
+                        try:
+                            reply_text = reply_to.text
+                            if is_url(reply_text):
+                               source_link = reply_text.strip()
+                               sourcemirrormsg2 = f"<b>#Mirrored</b>\n"
+                               sourcemirrormsg2 += f"\n━━━━━━━━━━━━━━━━━━━━"
+                               if source_link.startswith('magnet:'):
+                                  sourcemirrormsg2 += f'\n<b>Source Url</b>: <b>Share Magnet To</b> <b><a href="http://t.me/share/url?url={source_link}">Telegram</a></b>'
+                               else:
+                                  sourcemirrormsg2 += f'\n<b>Source Url</b>: <b><a href="{source_link}">Here</a></b>'
+                               sourcemirrormsg2 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                               sourcemirrormsg2 += f"ㅤㅤ ㅤ  «<b>Mirrored info</b>»\n"
+                               msg2 = f'\n{logmsg} '
+                               msg2 += f'\n━━━━━━━━━━━━━━━━━━━━'
+                               for i in MIRROR_LOGS:
+                                   logmirresult = bot.sendMessage(chat_id=i, text=sourcemirrormsg2 + msg2, reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                                   logmirresultlink = f'<a href="{logmirresult.link}">Log group</a>'
+                                   mirresult = f"{msg}\n"
+                                   mirresult += f"\n<b><i>This message saved in my</i></b> "
+                                   mirresult += f"<b><i>{logmirresultlink}</i></b>"
+                        except:
+                               for i in MIRROR_LOGS:
+                                   sourcefile_link = self.message.link
+                                   sourcemirrormsg3 = f"<b>#Mirrored</b>\n"
+                                   sourcemirrormsg3 += f"\n━━━━━━━━━━━━━━━━━━━━"
+                                   sourcemirrormsg3 += f'\n<b>Source File:</b> <b><a href="{sourcefile_link}">Here</a></b>'
+                                   sourcemirrormsg3 += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                   sourcemirrormsg3 += f"ㅤㅤ ㅤ  «<b>Mirrored info</b>»\n"
+                                   msg3 = f'\n{logmsg} '
+                                   msg3 += f'\n━━━━━━━━━━━━━━━━━━━━'
+                                   logmirresult = bot.sendMessage(chat_id=i, text=sourcemirrormsg3 + msg3, reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                                   logmirresultlink = f'<a href="{logmirresult.link}">Log group</a>'
+                                   mirresult = f"{msg}\n"
+                                   mirresult += f"\n<b><i>This message saved in my</i></b> "
+                                   mirresult += f"<b><i>{logmirresultlink}</i></b>"
+                                   pass
+                if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                    user_id = self.message.from_user.id
+                    if (
+                       user_id in SUDO_USERS or user_id == OWNER_ID
+                      ):
+                        bot.sendMessage(chat_id=self.message.from_user.id, text=msg,
+                                                reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)),
+                                                parse_mode=ParseMode.HTML)
+                        checkpmmsg = sendMarkup(ownerresult, self.bot, self.message, InlineKeyboardMarkup(ownerbutton.build_menu(1)))
+                        Thread(target=auto_delete_message, args=(self.bot, self.message, checkpmmsg)).start()
+                    else:
+                         sendMarkup(mirresult, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
+                else:
+                    sendMarkup(mirresult, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
+            else:
+                user_id = self.message.from_user.id
+                if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+                    if (
+                        user_id in SUDO_USERS or user_id == OWNER_ID
+                        ):
+                         bot.sendMessage(chat_id=self.message.from_user.id, text=msg,
+                                                reply_markup=InlineKeyboardMarkup(buttons.build_menu(2)),
+                                                parse_mode=ParseMode.HTML)
+                         checkpmmsg = sendMarkup(ownerresult, self.bot, self.message, InlineKeyboardMarkup(ownerbutton.build_menu(1)))
+                         Thread(target=auto_delete_message, args=(self.bot, self.message, checkpmmsg)).start()
+                    else:
+                         sendMarkup(msg, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
+                else:
+                    sendMarkup(msg, self.bot, self.message, InlineKeyboardMarkup(buttons.build_menu(2)))
+                    pass
+
             if self.isQbit and QB_SEED and not self.extract:
                 if self.isZip:
                     try:
@@ -362,34 +706,98 @@ class MirrorListener:
             DbManger().rm_complete_task(self.message.link)
 
 def _mirror(bot, message, isZip=False, extract=False, isQbit=False, isLeech=False, pswd=None, multi=0):
-    buttons = ButtonMaker()
+    uname = f'<a href="tg://user?id={message.from_user.id}">{message.from_user.first_name}</a>'
+    tasks = len(download_dict)
+    user_id = message.from_user.id
+
+    if user_id == OWNER_ID:
+        ownerorsudo = f"Owner"
+    else:
+        ownerorsudo = f"Sudo User"
+
+    bot_d = bot.get_me()
+    bot_username = bot_d.username
     length_of_leechlog = len(LEECH_LOG)
+    
+    if ACTIVE_TASK_LIMIT is not None:
+        if tasks == ACTIVE_TASK_LIMIT or tasks > ACTIVE_TASK_LIMIT:
+            if OWNER_ID != user_id and user_id not in SUDO_USERS:
+                   if isLeech:
+                       leechormirror = "Leech"
+                   else:
+                       leechormirror = "Mirror"
+                   msg2 = f"{uname}\n\n<b>You Can't #{leechormirror} Now\nBecause Max Tasks Limit Is</b> <b><i>{ACTIVE_TASK_LIMIT}</i></b>\n\n<b>Try Later</b>"
+                   sendmsg = sendMessage(msg2, bot, message)
+                   Thread(target=auto_delete_message, args=(bot, message, sendmsg)).start()
+                   return
+            else:
+                 msg4 =  f"{ownerorsudo} detected Task Limit won't effect them."
+                 sendmsg = sendMessage(msg4, bot, message)
+                 Thread(target=auto_delete_message, args=(bot, message, sendmsg)).start()
+                 pass
+
     if isLeech and length_of_leechlog == 0:
         try:
-            text = "Error: Leech Functionality will not work\nReason: Your Leech Log var is empty.\n\nRead the README file it's there for a reason."
+            text = "<b>Leech Functionality will not work\nLeech Log var is empty.</b>\n"
             msg = sendMessage(text, bot, message)
-            LOGGER.error("Leech Log var is Empty\nKindly add Chat id in Leech log to use Leech Functionality\nRead the README file it's there for a reason\n")
+            LOGGER.error("Leech Log var is Empty\nKindly add Chat id in Leech log to use Leech Functionality\n")
             Thread(target=auto_delete_message, args=(bot, message, msg)).start()
             return
         except Exception as err:
-            LOGGER.error(f"Uff We got Some Error:\n{err}")
+            LOGGER.error(f"Error:\n{err}")
             pass
-    if BOT_PM and message.chat.type != 'private':
+    if LEECH_PM and isLeech:
         try:
-            msg1 = f'Added your Requested link to Download\n'
-            send = bot.sendMessage(message.from_user.id, text=msg1)
-            send.delete()
+           msg1 = f'Testing if you Started me or not\n'
+           send = bot.sendMessage(message.from_user.id, text=msg1, )
+           send.delete()
         except Exception as e:
             LOGGER.warning(e)
-            bot_d = bot.get_me()
-            b_uname = bot_d.username
-            uname = f'<a href="tg://user?id={message.from_user.id}">{message.from_user.first_name}</a>'
-            botstart = f"http://t.me/{b_uname}"
-            buttons.buildbutton("Click Here to Start Me", f"{botstart}")
-            startwarn = f"Dear {uname},\n\n<b>I found that you haven't started me in PM (Private Chat) yet.</b>\n\nFrom now on i will give link and leeched files in PM and log channel only"
-            message = sendMarkup(startwarn, bot, message, InlineKeyboardMarkup(buttons.build_menu(2)))
-            Thread(target=auto_delete_message, args=(bot, message, message)).start()
+            startmsg = f"<b>{uname}</b>,\n\n<b>I found that you haven't started me in PM (Private Chat) yet.</b>\n\n<b><i>if you won't start me then i can't send you #Leeched files in your pm</i></b>\n\n<b><i>Start Me And Try Again</i></b>"
+            startbutton = f"http://t.me/{bot_username}"
+            button = ButtonMaker()
+            button.buildbutton("Start Me", startbutton)
+            sendmsg = sendMarkup(startmsg, bot, message, InlineKeyboardMarkup(button.build_menu(1)))
+            Thread(target=auto_delete_message, args=(bot, message, sendmsg)).start()
             return
+    else:
+        pass
+
+    if MAKE_OWNER_AND_SUDO_ANONYMOUS:
+        if (user_id in SUDO_USERS or user_id == OWNER_ID):
+             try:
+                 msg1 = f'.\n'
+                 send = bot.sendMessage(message.from_user.id, text=msg1,)
+                 send.delete()
+             except Exception as e:
+                  LOGGER.warning(e)
+ 
+                  startmsg = f"<b>Dear {ownerorsudo}</b>,\n\n<b>I found that you haven't started me in PM (Private Chat) yet.</b>\n\n<b>if you won't start me then i can't send you mirrored files in your pm</b>"
+                  startbutton = f"http://t.me/{bot_username}"
+                  button = ButtonMaker()
+                  button.buildbutton("Start Me", startbutton)
+                  sendmsg = sendMarkup(str(startmsg, bot, message, InlineKeyboardMarkup(button.build_menu(1))))
+                  Thread(target=auto_delete_message, args=(bot, message, sendmsg)).start()
+                  return
+        else:
+            pass
+
+    if FSUB:
+        try:
+            user = bot.get_chat_member(f"{FSUB_CHANNEL_ID}", message.from_user.id)
+            LOGGER.error(user.status)
+            if user.status not in ('member', 'creator', 'administrator'):
+                buttons = ButtonMaker()
+                buttons.buildbutton("Updates Channel", f"{FSUB_CHANNELLINK}")
+                reply_markup = InlineKeyboardMarkup(buttons.build_menu(1))
+                mess = sendMarkup(
+                    str(f"<b>{uname}</b> \n<b>You Think you can use without joining my updates channel?.</b>\n<b>Leave This group if you can't even subscribe a channel,</b>\n<b>We providing you mirror things for free and what you can't even subscribe our update channel.</b>\n\n<b>Subscribe channel to use me.</b>"),
+                    bot, message, reply_markup)
+                Thread(target=auto_delete_message, args=(bot, message, mess)).start()
+                return
+        except:
+            pass
+
     mesg = message.text.split('\n')
     message_args = mesg[0].split(' ', maxsplit=1)
     name_args = mesg[0].split('|', maxsplit=1)
@@ -440,12 +848,7 @@ def _mirror(bot, message, isZip=False, extract=False, isQbit=False, isLeech=Fals
             else:
                 tag = reply_to.from_user.mention_html(reply_to.from_user.first_name)
 
-        if (
-            not is_url(link)
-            and not is_magnet(link)
-            or len(link) == 0
-        ):
-
+        if not is_url(link) and not is_magnet(link) or len(link) == 0:
             if file is None:
                 reply_text = reply_to.text
                 if is_url(reply_text) or is_magnet(reply_text):
@@ -492,6 +895,32 @@ def _mirror(bot, message, isZip=False, extract=False, isQbit=False, isLeech=Fals
                 LOGGER.info(str(e))
                 if str(e).startswith('ERROR:'):
                     return sendMessage(str(e), bot, message)
+    elif isQbit and not is_magnet(link) and not ospath.exists(link):
+        if link.endswith('.torrent') or "https://api.telegram.org/file/" in link:
+            content_type = None
+        else:
+            content_type = get_content_type(link)
+        if content_type is None or re_match(r'application/x-bittorrent|application/octet-stream', content_type):
+            try:
+                resp = rget(link, timeout=10, headers = {'user-agent': 'Wget/1.12'})
+                if resp.status_code == 200:
+                    file_name = str(time()).replace(".", "") + ".torrent"
+                    with open(file_name, "wb") as t:
+                        t.write(resp.content)
+                    link = str(file_name)
+                else:
+                    return sendMessage(f"{tag} ERROR: link got HTTP response: {resp.status_code}", bot, message)
+            except Exception as e:
+                error = str(e).replace('<', ' ').replace('>', ' ')
+                if error.startswith('No connection adapters were found for'):
+                    link = error.split("'")[1]
+                else:
+                    LOGGER.error(str(e))
+                    return sendMessage(tag + " " + error, bot, message)
+        else:
+            msg = "Qb commands for torrents only. if you are trying to dowload torrent then report."
+            return sendMessage(msg, bot, message)
+
 
     listener = MirrorListener(bot, message, isZip, extract, isQbit, isLeech, pswd, tag)
 
@@ -504,11 +933,12 @@ def _mirror(bot, message, isZip=False, extract=False, isQbit=False, isLeech=Fals
         else:
             Thread(target=add_gd_download, args=(link, listener, is_gdtot)).start()
     elif is_mega_link(link):
-        if MEGA_KEY is not None:
-            Thread(target=MegaDownloader(listener).add_download, args=(link, f'{DOWNLOAD_DIR}{listener.uid}/')).start()
+        if MEGAREST:
+            mega_dl = MegaDownloadeHelper(listener).add_download
         else:
-            sendMessage('MEGA_API_KEY not Provided!', bot, message)
-    elif isQbit:
+            mega_dl = add_mega_download
+        Thread(target=mega_dl, args=(link, f'{DOWNLOAD_DIR}{listener.uid}/', listener)).start()
+    elif isQbit and (is_magnet(link) or ospath.exists(link)):
         Thread(target=QbDownloader(listener).add_qb_torrent, args=(link, f'{DOWNLOAD_DIR}{listener.uid}', qbitsel)).start()
     else:
         if len(mesg) > 1:
@@ -575,30 +1005,40 @@ def qb_unzip_leech(update, context):
 def qb_zip_leech(update, context):
     _mirror(context.bot, update.message, True, isQbit=True, isLeech=True)
 
+if SUDO_ONLY_MIRROR:
+   allow_mirror = CustomFilters.owner_filter | CustomFilters.sudo_user
+else:
+   allow_mirror = CustomFilters.authorized_chat | CustomFilters.authorized_user
+
+if SUDO_ONLY_LEECH:
+    allow_leech = CustomFilters.owner_filter | CustomFilters.sudo_user
+else:
+    allow_leech = CustomFilters.authorized_chat | CustomFilters.authorized_user
+
 mirror_handler = CommandHandler(BotCommands.MirrorCommand, mirror,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 unzip_mirror_handler = CommandHandler(BotCommands.UnzipMirrorCommand, unzip_mirror,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 zip_mirror_handler = CommandHandler(BotCommands.ZipMirrorCommand, zip_mirror,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 qb_mirror_handler = CommandHandler(BotCommands.QbMirrorCommand, qb_mirror,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 qb_unzip_mirror_handler = CommandHandler(BotCommands.QbUnzipMirrorCommand, qb_unzip_mirror,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 qb_zip_mirror_handler = CommandHandler(BotCommands.QbZipMirrorCommand, qb_zip_mirror,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 leech_handler = CommandHandler(BotCommands.LeechCommand, leech,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 unzip_leech_handler = CommandHandler(BotCommands.UnzipLeechCommand, unzip_leech,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 zip_leech_handler = CommandHandler(BotCommands.ZipLeechCommand, zip_leech,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 qb_leech_handler = CommandHandler(BotCommands.QbLeechCommand, qb_leech,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 qb_unzip_leech_handler = CommandHandler(BotCommands.QbUnzipLeechCommand, qb_unzip_leech,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 qb_zip_leech_handler = CommandHandler(BotCommands.QbZipLeechCommand, qb_zip_leech,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 
 dispatcher.add_handler(mirror_handler)
 dispatcher.add_handler(unzip_mirror_handler)

@@ -4,8 +4,8 @@ from telegram import InlineKeyboardMarkup
 from time import sleep
 from re import split as re_split
 
-from bot import DOWNLOAD_DIR, dispatcher
-from bot.helper.telegram_helper.message_utils import sendMessage, sendMarkup, editMessage
+from bot import DOWNLOAD_DIR, dispatcher, SUDO_ONLY_MIRROR, SUDO_ONLY_LEECH, ACTIVE_TASK_LIMIT, SUDO_USERS , OWNER_ID, download_dict
+from bot.helper.telegram_helper.message_utils import sendMessage, sendMarkup, delete_all_messages, update_all_messages, auto_delete_message, editMessage
 from bot.helper.telegram_helper import button_build
 from bot.helper.ext_utils.bot_utils import get_readable_file_size, is_url
 from bot.helper.mirror_utils.download_utils.youtube_dl_download_helper import YoutubeDLHelper
@@ -19,6 +19,30 @@ def _watch(bot, message, isZip=False, isLeech=False, multi=0):
     mssg = message.text
     user_id = message.from_user.id
     msg_id = message.message_id
+    uname = f'<a href="tg://user?id={message.from_user.id}">{message.from_user.first_name}</a>'
+    tasks = len(download_dict)
+
+    if user_id == OWNER_ID:
+        ownerorsudo = f"Owner"
+    else:
+        ownerorsudo = f"Sudo User"
+
+    if ACTIVE_TASK_LIMIT is not None:
+        if tasks == ACTIVE_TASK_LIMIT or tasks > ACTIVE_TASK_LIMIT:
+            if OWNER_ID != user_id and user_id not in SUDO_USERS:
+                   if isLeech:
+                       leechormirror = "Leech"
+                   else:
+                       leechormirror = "Mirror"
+                   msg2 = f"{uname}\n\n<b>You Can't #{leechormirror} Now\nBecause Max Tasks Limit Is</b> <b><i>{ACTIVE_TASK_LIMIT}</i></b>\n\n<b>Try Later</b>"
+                   sendmsg = sendMessage(msg2, bot, message)
+                   Thread(target=auto_delete_message, args=(bot, message, sendmsg)).start()
+                   return
+            else:
+                 msg4 =  f"{ownerorsudo} detected Task Limit won't effect them."
+                 sendmsg = sendMessage(msg4, bot, message)
+                 Thread(target=auto_delete_message, args=(bot, message, sendmsg)).start()
+                 pass
 
     try:
         link = mssg.split(' ')[1].strip()
@@ -277,14 +301,24 @@ def leechWatch(update, context):
 def leechWatchZip(update, context):
     _watch(context.bot, update.message, True, True)
 
+if SUDO_ONLY_MIRROR:
+   allow_mirror = CustomFilters.owner_filter | CustomFilters.sudo_user
+else:
+   allow_mirror = CustomFilters.authorized_chat | CustomFilters.authorized_user
+
+if SUDO_ONLY_LEECH:
+    allow_leech = CustomFilters.owner_filter | CustomFilters.sudo_user
+else:
+    allow_leech = CustomFilters.authorized_chat | CustomFilters.authorized_user
+
 watch_handler = CommandHandler(BotCommands.WatchCommand, watch,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_mirror, run_async=True)
 zip_watch_handler = CommandHandler(BotCommands.ZipWatchCommand, watchZip,
-                                    filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                    filters=allow_mirror, run_async=True)
 leech_watch_handler = CommandHandler(BotCommands.LeechWatchCommand, leechWatch,
-                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                filters=allow_leech, run_async=True)
 leech_zip_watch_handler = CommandHandler(BotCommands.LeechZipWatchCommand, leechWatchZip,
-                                    filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+                                    filters=allow_leech, run_async=True)
 quality_handler = CallbackQueryHandler(select_format, pattern="qu", run_async=True)
 
 dispatcher.add_handler(watch_handler)

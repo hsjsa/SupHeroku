@@ -8,6 +8,9 @@ from https://github.com/AvinashReddy3108/PaperplaneExtended . I hereby take no c
 than the modifications. See https://github.com/AvinashReddy3108/PaperplaneExtended/commits/master/userbot/modules/direct_links.py
 for original authorship. """
 
+import re
+import requests
+
 from requests import get as rget, head as rhead, post as rpost, Session as rsession
 from re import findall as re_findall, sub as re_sub, match as re_match, search as re_search
 from base64 import b64decode
@@ -19,7 +22,22 @@ from bs4 import BeautifulSoup
 from base64 import standard_b64encode
 from lxml import etree
 
-from bot import LOGGER, UPTOBOX_TOKEN, CRYPT, APPDRIVE_EMAIL, APPDRIVE_PASS
+from bot import APPDRIVE_EMAIL, APPDRIVE_PASS
+from bot import CLONE_LOCATION as GDFOL_ID
+from bot import (
+    CRYPT,
+    DB_CRYPT,
+    HUBD_CRYPT,
+    LOGGER,
+    UPTOBOX_TOKEN,
+    Sharerpw_laravel,
+    Sharerpw_XSRF,
+    drivefire_CRYPT,
+    gadrive_CRYPT,
+    jiodrive_CRYPT,
+    katdrive_CRYPT,
+    kolop_CRYPT,
+)
 from bot.helper.telegram_helper.bot_commands import BotCommands
 from bot.helper.ext_utils.bot_utils import is_gdtot_link
 from bot.helper.ext_utils.exceptions import DirectDownloadLinkException
@@ -29,53 +47,108 @@ fmed_list = ['fembed.net', 'fembed.com', 'femax20.com', 'fcdn.stream', 'feurl.co
 
 
 def direct_link_generator(link: str):
-    """ direct links generator """
-    if 'youtube.com' in link or 'youtu.be' in link:
-        raise DirectDownloadLinkException(f"ERROR: Use /{BotCommands.WatchCommand} to mirror Youtube link\nUse /{BotCommands.ZipWatchCommand} to make zip of Youtube playlist")
-    elif 'zippyshare.com' in link:
+    """direct links generator"""
+    if "youtube.com" in link or "youtu.be" in link:
+        raise DirectDownloadLinkException(
+            f"ERROR: Use /{BotCommands.WatchCommand} to mirror Youtube link\nUse /{BotCommands.ZipWatchCommand} to make zip of Youtube playlist"
+        )
+    elif "zippyshare.com" in link:
         return zippy_share(link)
-    elif 'yadi.sk' in link or 'disk.yandex.com' in link:
+    elif (
+        "yadi.sk" in link
+        or "disk.yandex.com" in link
+        or "yandex.com.tr" in link
+        or "yandex.com.ru" in link
+    ):
         return yandex_disk(link)
-    elif 'mediafire.com' in link:
+    elif "mediafire.com" in link:
         return mediafire(link)
-    elif 'uptobox.com' in link:
+    elif "uptobox.com" in link:
         return uptobox(link)
-    elif 'osdn.net' in link:
+    elif "osdn.net" in link:
         return osdn(link)
-    elif 'github.com' in link:
+    elif "github.com" in link:
         return github(link)
-    elif 'hxfile.co' in link:
+    elif "hxfile.co" in link:
         return hxfile(link)
-    elif 'anonfiles.com' in link:
+    elif "files.im" in link:
+        return filesIm(link)
+    elif "linkpoi" in link:
+        return linkpoi(link)
+    elif "mirrored" in link:
+        return mirrored(link)
+    elif "reupload" in link:
+        return reupload(link)
+    elif "uservideo" in link:
+        return uservideo(link)
+    elif "anonfiles.com" in link:
         return anonfiles(link)
-    elif 'letsupload.io' in link:
+    elif "letsupload.io" in link:
         return letsupload(link)
-    elif '1drv.ms' in link:
+    elif "1drv.ms" in link:
         return onedrive(link)
-    elif 'pixeldrain.com' in link:
+    elif "pixeldrain.com" in link:
         return pixeldrain(link)
-    elif 'antfiles.com' in link:
+    elif "antfiles.com" in link:
         return antfiles(link)
-    elif 'streamtape.com' in link:
+    elif "streamtape.com" in link:
         return streamtape(link)
-    elif 'bayfiles.com' in link:
+    elif "bayfiles.com" in link:
         return anonfiles(link)
-    elif 'racaty.net' in link:
+    elif "racaty.net" in link:
         return racaty(link)
-    elif '1fichier.com' in link:
+    elif "1fichier.com" in link:
         return fichier(link)
-    elif 'solidfiles.com' in link:
+    elif "solidfiles.com" in link:
         return solidfiles(link)
-    elif 'krakenfiles.com' in link:
+    elif "krakenfiles.com" in link:
         return krakenfiles(link)
     elif is_gdtot_link(link):
         return gdtot(link)
+    elif "drivebuzz" in link:
+        return drivebuzz_dl(link)
+    elif (
+        "appdrive" in link
+        or "driveapp" in link
+        or "drivehub" in link
+        or "gdflix" in link
+        or "drivesharer" in link
+        or "drivebit" in link
+        or "drivelink" in link
+        or "driveace" in link
+        or "drivepro" in link
+    ):
+        return appdrive(link)
+    elif "hubdrive" in link:
+        return hubdrive_dl(link)
+    elif "kolop" in link:
+        return kolop_dl(link)
+    elif "katdrive" in link:
+        return katdrive_dl(link)
+    elif "gadrive" in link:
+        return gadrive_dl(link)
+    elif "jiodrive" in link:
+        return jiodrive_dl(link)
+    elif "drivefire" in link:
+        return drivefire_dl(link)
+    elif "gofile.io" in link:
+        return gofile_ddl(link)
+    elif "megaup.net" in link:
+        return megaup_dl(link)
+    elif "mdisk" in link:
+        return mdisk_ddl(link)
+    elif "wetransfer.com" in link or "we.tl" in link:
+        return wetransfer_ddl(link)
+    elif "sharer.pw" in link:
+        return sharerpw_dl(link)
     elif any(x in link for x in fmed_list):
         return fembed(link)
-    elif any(x in link for x in ['sbembed.com', 'watchsb.com', 'streamsb.net', 'sbplay.org']):
+    elif any(
+        x in link for x in ["sbembed.com", "watchsb.com", "streamsb.net", "sbplay.org"]
+    ):
         return sbembed(link)
     else:
-        raise DirectDownloadLinkException(f'No Direct link function found for {link}')
+        raise DirectDownloadLinkException(f"No Direct link function found for {link}")
 
 def zippy_share(url: str) -> str:
     """ ZippyShare direct link generator
@@ -384,22 +457,200 @@ def gdtot(url: str) -> str:
         raise DirectDownloadLinkException("ERROR: Try in your broswer, mostly file not found or user limit exceeded!")
     return f'https://drive.google.com/open?id={decoded_id}'
 
-account = {
-    'email': APPDRIVE_EMAIL,
-    'passwd': APPDRIVE_PASS
-    }
-def account_login(client, url, email, password):
-    """ AppDrive google drive link generator
-    By https://github.com/xcscxr """
+def drivebuzz_dl(url: str) -> str:
+    """DriveBuzz google drive link generator
+    By https://github.com/xcscxr"""
 
-    if APPDRIVE_EMAIL is None:
-        raise DirectDownloadLinkException("ERROR: Appdrive  Email Password not provided")
+    if DB_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: DriveBuzz CRYPT cookie not provided")
 
-    data = {
-        'email': email,
-        'password': password
-    }
-    client.post(f'https://{urlparse(url).netloc}/login', data=data)
+    match = re.findall(r"https?://(.+)\.drivebuzz\.(.+)\/\S+\/\S+", url)[0]
+
+    with requests.Session() as client:
+        client.cookies.update({"crypt": DB_CRYPT})
+        res = client.get(url)
+        res = client.get(
+            f"https://{match[0]}.drivebuzz.{match[1]}/dld?id={url.split('/')[-1]}"
+        )
+    matches = re.findall("gd=(.*?)&", res.text)
+    try:
+        decoded_id = b64decode(str(matches[0])).decode("utf-8")
+    except BaseException:
+        raise DirectDownloadLinkException(
+            "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+        )
+    return f"https://drive.google.com/open?id={decoded_id}"
+
+def hubdrive_dl(url: str) -> str:
+    """HubDrive google drive link generator
+    By https://github.com/xcscxr"""
+
+    if HUBD_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: HubDrive CRYPT cookie not provided")
+
+    try:
+        with requests.Session() as client:
+            client.cookies.update({"crypt": HUBD_CRYPT})
+            res = client.get(url)
+            up = urlparse(url)
+            req_url = f"{up.scheme}://{up.netloc}/ajax.php?ajax=download"
+            file_id = url.split("/")[-1]
+            data = {"id": file_id}
+            headers = {"x-requested-with": "XMLHttpRequest"}
+        try:
+            res = client.post(req_url, headers=headers, data=data).json()["file"]
+            gd_id = re.findall("gd=(.*)", res, re.DOTALL)[0]
+        except BaseException:
+            raise DirectDownloadLinkException(
+                "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+            )
+        return f"https://drive.google.com/open?id={gd_id}"
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+def kolop_dl(url: str) -> str:
+    """Kolop google drive link generator
+    By https://github.com/xcscxr"""
+
+    if kolop_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: Kolop CRYPT cookie not provided")
+
+    try:
+        with requests.Session() as client:
+            client.cookies.update({"crypt": kolop_CRYPT})
+            res = client.get(url)
+            up = urlparse(url)
+            req_url = f"{up.scheme}://{up.netloc}/ajax.php?ajax=download"
+            file_id = url.split("/")[-1]
+            data = {"id": file_id}
+            headers = {"x-requested-with": "XMLHttpRequest"}
+        try:
+            res = client.post(req_url, headers=headers, data=data).json()["file"]
+            gd_id = re.findall("gd=(.*)", res, re.DOTALL)[0]
+        except BaseException:
+            raise DirectDownloadLinkException(
+                "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+            )
+        return f"https://drive.google.com/open?id={gd_id}"
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+
+def katdrive_dl(url: str) -> str:
+    """KatDrive google drive link generator
+    By https://github.com/xcscxr"""
+
+    if katdrive_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: Katdrive CRYPT cookie not provided")
+
+    try:
+        with requests.Session() as client:
+            client.cookies.update({"crypt": katdrive_CRYPT})
+            res = client.get(url)
+            up = urlparse(url)
+            req_url = f"{up.scheme}://{up.netloc}/ajax.php?ajax=download"
+            file_id = url.split("/")[-1]
+            data = {"id": file_id}
+            headers = {"x-requested-with": "XMLHttpRequest"}
+        try:
+            res = client.post(req_url, headers=headers, data=data).json()["file"]
+            gd_id = re.findall("gd=(.*)", res, re.DOTALL)[0]
+        except BaseException:
+            raise DirectDownloadLinkException(
+                "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+            )
+        return f"https://drive.google.com/open?id={gd_id}"
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+
+
+def gadrive_dl(url: str) -> str:
+    """GaDrive google drive link generator
+    By https://github.com/xcscxr"""
+
+    if gadrive_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: GaDrive CRYPT cookie not provided")
+
+    try:
+        with requests.Session() as client:
+            client.cookies.update({"crypt": gadrive_CRYPT})
+            res = client.get(url)
+            up = urlparse(url)
+            req_url = f"{up.scheme}://{up.netloc}/ajax.php?ajax=download"
+            file_id = url.split("/")[-1]
+            data = {"id": file_id}
+            headers = {"x-requested-with": "XMLHttpRequest"}
+        try:
+            res = client.post(req_url, headers=headers, data=data).json()["file"]
+            gd_id = re.findall("gd=(.*)", res, re.DOTALL)[0]
+        except BaseException:
+            raise DirectDownloadLinkException(
+                "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+            )
+        return f"https://drive.google.com/open?id={gd_id}"
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+
+
+def jiodrive_dl(url: str) -> str:
+    """JioDrive google drive link generator
+    By https://github.com/xcscxr"""
+
+    if jiodrive_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: JioDrive CRYPT cookie not provided")
+
+    try:
+        with requests.Session() as client:
+            client.cookies.update({"crypt": jiodrive_CRYPT})
+            res = client.get(url)
+            up = urlparse(url)
+            req_url = f"{up.scheme}://{up.netloc}/ajax.php?ajax=download"
+            file_id = url.split("/")[-1]
+            data = {"id": file_id}
+            headers = {"x-requested-with": "XMLHttpRequest"}
+        try:
+            res = client.post(req_url, headers=headers, data=data).json()["file"]
+            gd_id = re.findall("gd=(.*)", res, re.DOTALL)[0]
+        except BaseException:
+            raise DirectDownloadLinkException(
+                "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+            )
+        return f"https://drive.google.com/open?id={gd_id}"
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+
+
+def drivefire_dl(url: str) -> str:
+    """DriveFire google drive link generator
+    By https://github.com/xcscxr"""
+
+    if drivefire_CRYPT is None:
+        raise DirectDownloadLinkException("ERROR: DriveFire CRYPT cookie not provided")
+
+    try:
+        with requests.Session() as client:
+            client.cookies.update({"crypt": drivefire_CRYPT})
+            res = client.get(url)
+            up = urlparse(url)
+            req_url = f"{up.scheme}://{up.netloc}/ajax.php?ajax=download"
+            file_id = url.split("/")[-1]
+            data = {"id": file_id}
+            headers = {"x-requested-with": "XMLHttpRequest"}
+        try:
+            res = client.post(req_url, headers=headers, data=data).json()["file"]
+            gd_id = re.findall("gd=(.*)", res, re.DOTALL)[0]
+        except BaseException:
+            raise DirectDownloadLinkException(
+                "ERROR: Try in your broswer, mostly file not found or user limit exceeded!"
+            )
+        return f"https://drive.google.com/open?id={gd_id}"
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+
 
 def gen_payload(data, boundary=f'{"-"*6}_'):
     data_string = ''
@@ -410,7 +661,7 @@ def gen_payload(data, boundary=f'{"-"*6}_'):
     return data_string
 
 def parse_info(data):
-    info = re_findall(r'>(.*?)<\/li>', data)
+    info = re.findall(r'>(.*?)<\/li>', data)
     info_parsed = {}
     for item in info:
         kv = [s.strip() for s in item.split(':', maxsplit=1)]
@@ -418,43 +669,216 @@ def parse_info(data):
     return info_parsed
 
 def appdrive(url: str) -> str:
-    client = rsession()
-    client.headers.update({
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36"
-    })
-    account_login(client, url, account['email'], account['passwd'])
-    res = client.get(url)
-    key = re_findall(r'"key",\s+"(.*?)"', res.text)[0]
-    ddl_btn = etree.HTML(res.content).xpath("//button[@id='drc']")
-    info_parsed = parse_info(res.text)
-    info_parsed['error'] = False
-    info_parsed['link_type'] = 'login'  # direct/login
-    headers = {
-        "Content-Type": f"multipart/form-data; boundary={'-'*4}_",
-    }
-    data = {
-        'type': 1,
-        'key': key,
-        'action': 'original'
-    }
-    if len(ddl_btn):
-        info_parsed['link_type'] = 'direct'
-        data['action'] = 'direct'
-    while data['type'] <= 3:
-        try:
-            response = client.post(url, data=gen_payload(data), headers=headers).json()
-            break
-        except: data['type'] += 1
-    if 'url' in response:
-        info_parsed['gdrive_link'] = response['url']
-    elif 'error' in response and response['error']:
-        info_parsed['error'] = True
-        info_parsed['error_message'] = response['message']
-    if urlparse(url).netloc == 'driveapp.in' and not info_parsed['error']:
-        res = client.get(info_parsed['gdrive_link'])
-        drive_link = etree.HTML(res.content).xpath("//a[contains(@class,'btn')]/@href")[0]
-        info_parsed['gdrive_link'] = drive_link
-    if not info_parsed['error']:
-        return info_parsed
+    """AppDrive/DriveApp/DriveHub/GDFlix/DriveSharer/DriveBit/DriveLink/DriveAce/DrivePro google drive link generator
+    By https://github.com/xcscxr"""
+
+    if APPDRIVE_EMAIL is None or APPDRIVE_PASS is None or GDFOL_ID is None:
+        raise DirectDownloadLinkException(
+            "AppDrive/DriveApp/DriveHub/GDFlix/DriveSharer/DriveBit/DriveLink Credentials not Found!"
+        )
+
+    try:
+        account = {"email": APPDRIVE_EMAIL, "passwd": APPDRIVE_PASS}
+        client = requests.Session()
+        client.headers.update(
+            {
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36"
+            }
+        )
+        data = {"email": account["email"], "password": account["passwd"]}
+        client.post(f"https://{urlparse(url).netloc}/login", data=data)
+        data = {"root_drive": "", "folder": GDFOL_ID}
+        client.post(f"https://{urlparse(url).netloc}/account", data=data)
+        res = client.get(url)
+        key = re.findall('"key",\s+"(.*?)"', res.text)[0]
+        ddl_btn = etree.HTML(res.content).xpath("//button[@id='drc']")
+        info = re.findall(">(.*?)<\/li>", res.text)
+        info_parsed = {}
+        for item in info:
+            kv = [s.strip() for s in item.split(":", maxsplit=1)]
+            info_parsed[kv[0].lower()] = kv[1]
+        info_parsed = info_parsed
+        info_parsed["error"] = False
+        info_parsed["link_type"] = "login"  # direct/login
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={'-'*4}_",
+        }
+        data = {"type": 1, "key": key, "action": "original"}
+        if len(ddl_btn):
+            info_parsed["link_type"] = "direct"
+            data["action"] = "direct"
+        while data["type"] <= 3:
+            boundary = f'{"-"*6}_'
+            data_string = ""
+            for item in data:
+                data_string += f"{boundary}\r\n"
+                data_string += f'Content-Disposition: form-data; name="{item}"\r\n\r\n{data[item]}\r\n'
+            data_string += f"{boundary}--\r\n"
+            gen_payload = data_string
+            try:
+                response = client.post(url, data=gen_payload, headers=headers).json()
+                break
+            except BaseException:
+                data["type"] += 1
+        if "url" in response:
+            info_parsed["gdrive_link"] = response["url"]
+        elif "error" in response and response["error"]:
+            info_parsed["error"] = True
+            info_parsed["error_message"] = response["message"]
+        else:
+            info_parsed["error"] = True
+            info_parsed["error_message"] = "Something went wrong :("
+        if info_parsed["error"]:
+            return info_parsed
+        if urlparse(url).netloc == "driveapp.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "drivehub.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "gdflix.pro" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "drivesharer.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "drivebit.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "drivelinks.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "driveace.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if urlparse(url).netloc == "drivepro.in" and not info_parsed["error"]:
+            res = client.get(info_parsed["gdrive_link"])
+            drive_link = etree.HTML(res.content).xpath(
+                "//a[contains(@class,'btn')]/@href"
+            )[0]
+            info_parsed["gdrive_link"] = drive_link
+        info_parsed["src_url"] = url
+        if info_parsed["error"]:
+            raise DirectDownloadLinkException(f"{info_parsed['error_message']}")
+        return info_parsed["gdrive_link"]
+
+    except BaseException:
+        raise DirectDownloadLinkException(f"Unable to Extract GDrive Link")
+
+def gofile_ddl(url: str) -> str:
+    """Gofile.io DDL link generator
+    By https://github.com/xcscxr"""
+    """
+    check = re.findall(r"\bhttps?://.*gofile\S+", url)
+    if not check:
+        textx = f"Invalid Gofile url"
+        return textx
     else:
-        raise DirectDownloadLinkException(f"{info_parsed['error_message']}")
+        api_uri = "https://api.gofile.io"
+
+        client = requests.Session()
+        res = client.get(api_uri + "/createAccount").json()
+        data = {
+            "contentId": url.split("/")[-1],
+            "token": res["data"]["token"],
+            "websiteToken": "12345",
+            "cache": "true",
+        }
+        try:
+            res = client.get(api_uri + "/getContent", params=data).json()
+            for item in res["data"]["contents"].values():
+                content = item
+        except BaseException:
+            return "Invalid Link"
+
+        return content["directLink"] """
+    return "Bot Cannot Download gofile links"
+
+def _prepare_session() -> requests.Session:
+    """Prepare a wetransfer.com session.
+    Return a requests session that will always pass the required headers
+    and with cookies properly populated that can be used for wetransfer
+    requests.
+    """
+    s = requests.Session()
+    r = s.get("https://wetransfer.com/")
+    m = re.search('name="csrf-token" content="([^"]+)"', r.text)
+    s.headers.update(
+        {
+            "x-csrf-token": m.group(1),
+            "x-requested-with": "XMLHttpRequest",
+        }
+    )
+    return s
+
+WETRANSFER_API_URL = "https://wetransfer.com/api/v4/transfers"
+WETRANSFER_DOWNLOAD_URL = WETRANSFER_API_URL + "/{transfer_id}/download"
+
+def wetransfer_ddl(url: str) -> str:
+    """WeTransfer.com DDL link generator
+    By https://github.com/dishapatel010"""
+
+    if url.startswith("https://we.tl/"):
+        r = requests.head(url, allow_redirects=True)
+        url = r.url
+
+    recipient_id = None
+    params = urlparse(url).path.split("/")[2:]
+
+    if len(params) == 2:
+        transfer_id, security_hash = params
+    elif len(params) == 3:
+        transfer_id, recipient_id, security_hash = params
+    else:
+        return None
+
+    j = {
+        "intent": "entire_transfer",
+        "security_hash": security_hash,
+    }
+    if recipient_id:
+        j["recipient_id"] = recipient_id
+    s = _prepare_session()
+    r = s.post(WETRANSFER_DOWNLOAD_URL.format(transfer_id=transfer_id), json=j)
+
+    j = r.json()
+    if "direct_link" in j:
+        return j["direct_link"]
+    else:
+        xo = f"The content is expired/deleted."
+        return xo
+
+def parse_info(res):
+    f = re.findall(">(.*?)<\/td>", res.text)
+    info_parsed = {}
+    for i in range(0, len(f), 3):
+        info_parsed[f[i].lower().replace(" ", "_")] = f[i + 2]
+    return info_parsed

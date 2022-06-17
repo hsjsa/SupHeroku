@@ -4,10 +4,12 @@ from subprocess import run as srun, check_output
 from psutil import disk_usage, cpu_percent, swap_memory, cpu_count, virtual_memory, net_io_counters, boot_time
 from time import time
 from sys import executable
-from telegram import InlineKeyboardMarkup
+from telegram import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CommandHandler
 
-from bot import bot, dispatcher, updater, botStartTime, IGNORE_PENDING_REQUESTS, LOGGER, Interval, INCOMPLETE_TASK_NOTIFIER, DB_URI, alive, app, main_loop
+from bot import bot, app, dispatcher, updater, botStartTime, OWNER_ID , DISABLE_STATS_NON_ADMINS ,  \
+    IGNORE_PENDING_REQUESTS, IMAGE_URL, LOGGER, Interval, main_loop, INCOMPLETE_TASK_NOTIFIER, DB_URI, \
+    LEECH_PM, FSUB_CHANNELLINK, SUDO_ONLY_MIRROR, SUDO_ONLY_LEECH
 from .helper.ext_utils.fs_utils import start_cleanup, clean_all, exit_clean_up
 from .helper.ext_utils.telegraph_helper import telegraph
 from .helper.ext_utils.bot_utils import get_readable_file_size, get_readable_time
@@ -44,48 +46,82 @@ def stats(update, context):
     mem_t = get_readable_file_size(memory.total)
     mem_a = get_readable_file_size(memory.available)
     mem_u = get_readable_file_size(memory.used)
-    stats = f'<b>Commit Date:</b> {last_commit}\n\n'\
-            f'<b>Bot Uptime:</b> {currentTime}\n'\
+    stats = f'<b>Uptime ↓</b>\n' \
+            f'<b>Bot Uptime:</b> {currentTime} <b>│</b> '\
             f'<b>OS Uptime:</b> {osUptime}\n\n'\
-            f'<b>Total Disk Space:</b> {total}\n'\
-            f'<b>Used:</b> {used} | <b>Free:</b> {free}\n\n'\
-            f'<b>Upload:</b> {sent}\n'\
-            f'<b>Download:</b> {recv}\n\n'\
-            f'<b>CPU:</b> {cpuUsage}%\n'\
-            f'<b>RAM:</b> {mem_p}%\n'\
+            f'<b>Disk ↓</b>\n'\
+            f'<b>Total:</b> {total} <b>│</b> '\
+            f'<b>Used:</b> {used} <b>|</b> <b>Free:</b> {free}\n\n'\
+            f'<b>Usage↓</b>\n'\
+            f'<b>Upload:</b> {sent} <b>│</b> '\
+            f'<b>Download:</b> {recv} <b>│</b> \n'\
+            f'<b>CPU:</b> {cpuUsage}% <b>│</b> '\
+            f'<b>RAM:</b> {mem_p}% <b>│</b> '\
             f'<b>DISK:</b> {disk}%\n\n'\
-            f'<b>Physical Cores:</b> {p_core}\n'\
-            f'<b>Total Cores:</b> {t_core}\n\n'\
+            f'<b>Cores</b>\n'\
+            f'<b>Physical:</b> {p_core} <b>│</b> '\
+            f'<b>Total:</b> {t_core}\n\n'\
+            f'<b>Memory</b>\n'\
             f'<b>SWAP:</b> {swap_t} | <b>Used:</b> {swap_p}%\n'\
-            f'<b>Memory Total:</b> {mem_t}\n'\
-            f'<b>Memory Free:</b> {mem_a}\n'\
-            f'<b>Memory Used:</b> {mem_u}\n'
-    sendMessage(stats, context.bot, update.message)
+            f'<b>Total:</b> {mem_t} <b>│</b> '\
+            f'<b>Free:</b> {mem_a} <b>│</b> '\
+            f'<b>Used:</b> {mem_u}\n'
 
+    isPrivate = update.message.chat.type in ['private', 'group']
+    if not isPrivate and DISABLE_STATS_NON_ADMINS:
+       chat_id = update.effective_chat.id
+       user_id = update.message.from_user.id
+       admins = bot.get_chat_member(chat_id, user_id).status in [
+           "creator",
+           "administrator",
+       ] or user_id in [OWNER_ID]
+       if admins:
+           update.effective_message.reply_photo(IMAGE_URL, stats, parse_mode=ParseMode.HTML)
+       else:
+           uname = f'<a href="tg://user?id={update.message.from_user.id}">{update.message.from_user.first_name}</a>'
+           notadmin = f'''{uname}\n
+<b>You Are Not A Chat Admin Or Owner!!</b>\n <code>/{BotCommands.StatsCommand}</code> <b>Command is disabled for non-admins.</b>\n
+'''  
+           update.effective_message.reply_photo(IMAGE_URL, notadmin, parse_mode=ParseMode.HTML)
+    else:
+        update.effective_message.reply_photo(IMAGE_URL, stats, parse_mode=ParseMode.HTML)
 
 def start(update, context):
     buttons = ButtonMaker()
-    buttons.buildbutton("Repo", "https://github.com/arshsisodiya/helios-mirror")
-    buttons.buildbutton("Support Group", "https://t.me/mirrorsociety")
-    reply_markup = InlineKeyboardMarkup(buttons.build_menu(2))
+    buttons.buildbutton("Updates Channel", f"{FSUB_CHANNELLINK}")
+    buttons.buildbutton("Other Groups", "https://t.me/Sandeshs_Gateway")
+    reply_markup = InlineKeyboardMarkup(buttons.build_menu(1))
+    uname = f'<a href="tg://user?id={update.message.from_user.id}">{update.message.from_user.first_name}</a>'
     if CustomFilters.authorized_user(update) or CustomFilters.authorized_chat(update):
-        start_string = f'''
-This bot can mirror all your links to Google Drive!
-Type /{BotCommands.HelpCommand} to get a list of available commands
+        start_string = f'''{uname},\n
+<b>This bot can mirror all your links to Google Drive! and also can Upload them on Telegram if you want.
+Type</b> /{BotCommands.HelpCommand} <b>to get a list of available commands</b>
 '''
         sendMarkup(start_string, context.bot, update.message, reply_markup)
     else:
-        sendMarkup('Not Authorized user, deploy your own mirror-leech bot', context.bot, update.message, reply_markup)
+        button = ButtonMaker()
+        button.buildbutton("Join Group", f"{FSUB_CHANNELLINK}")
+        join = InlineKeyboardMarkup(button.build_menu(1))
+        
+        if LEECH_PM:
+            start_string = f'''{uname}, \n\n
+            <b>If you came from my group for starting me then cool,\n
+            You started me successfully,\nFrom now on i will send all your #Leeched files here\n\n
+            If You Don't know what i am talking about then join my group and use me\n\n
+            Remember You can't use me here unless you are a authorised user.</b>
+            '''
+            sendMarkup(start_string, context.bot, update.message, join)
+        else:
+            sendMarkup(f'{uname},\n\n<b>If You Want To Use Me, \nJoin My Mirror Group And Use me there</b>\n', context.bot, update.message, join)
 
 def restart(update, context):
     restart_message = sendMessage("Restarting...", context.bot, update.message)
     if Interval:
         Interval[0].cancel()
-    alive.kill()
     clean_all()
-    srun(["pkill", "-9", "-f", "gunicorn|extra-api|last-api|megasdkrest|new-api"])
+    srun(["pkill", "-f", "gunicorn|aria2c|qbittorrent-nox"])
     srun(["python3", "update.py"])
-    with open(".restartmsg", "w") as f: 
+    with open(".restartmsg", "w") as f:
         f.truncate(0)
         f.write(f"{restart_message.chat.id}\n{restart_message.message_id}\n")
     osexecl(executable, executable, "-m", "bot")
@@ -171,35 +207,93 @@ help_string_telegraph = f'''<br>
 '''
 
 help = telegraph.create_page(
-        title='Mirror-Leech-Bot Help',
+        title='#LiteMirrors Bot Help',
         content=help_string_telegraph,
     )["path"]
 
 help_string = f'''
-/{BotCommands.PingCommand}: Check how long it takes to Ping the Bot
-
-/{BotCommands.AuthorizeCommand}: Authorize a chat or a user to use the bot (Can only be invoked by Owner & Sudo of the bot)
-
-/{BotCommands.UnAuthorizeCommand}: Unauthorize a chat or a user to use the bot (Can only be invoked by Owner & Sudo of the bot)
-
-/{BotCommands.AuthorizedUsersCommand}: Show authorized users (Only Owner & Sudo)
-
-/{BotCommands.AddSudoCommand}: Add sudo user (Only Owner)
-
-/{BotCommands.RmSudoCommand}: Remove sudo users (Only Owner)
-
-/{BotCommands.RestartCommand}: Restart and update the bot
-
-/{BotCommands.LogCommand}: Get a log file of the bot. Handy for getting crash reports
+Hey, You Need Help?
 '''
 
 def bot_help(update, context):
     button = ButtonMaker()
-    button.buildbutton("Other Commands", f"https://telegra.ph/{help}")
+    button.buildbutton("Click Here for Help", f"https://telegra.ph/{help}")
     reply_markup = InlineKeyboardMarkup(button.build_menu(1))
     sendMarkup(help_string, context.bot, update.message, reply_markup)
 
+if SUDO_ONLY_MIRROR:
+    botcmds = [
+        (f'{BotCommands.LeechCommand}','Leech'),
+        (f'{BotCommands.ZipLeechCommand}','Leech and upload as zip'),
+        (f'{BotCommands.UnzipLeechCommand}','Leech and extract files'),
+        (f'{BotCommands.QbLeechCommand}','Leech torrent using qBittorrent'),
+        (f'{BotCommands.QbZipLeechCommand}','Leech torrent and upload as zip using qb'),
+        (f'{BotCommands.QbUnzipLeechCommand}','Leech torrent and extract using qb'),
+        (f'{BotCommands.LeechWatchCommand}','Leech yt-dlp supported link'),
+        (f'{BotCommands.LeechZipWatchCommand}','Leech yt-dlp supported link as zip'),
+        (f'{BotCommands.CancelMirror}','Cancel a task'),
+        (f'{BotCommands.LeechSetCommand}','Leech settings'),
+        (f'{BotCommands.SetThumbCommand}','Set thumbnail'),
+        (f'{BotCommands.StatusCommand}','Get mirror/leech status message'),
+        (f'{BotCommands.StatsCommand}','Bot usage stats'),
+        (f'{BotCommands.PingCommand}','Ping the bot'),
+        (f'{BotCommands.HelpCommand}','Get detailed help')
+    ]
+elif SUDO_ONLY_LEECH:
+    botcmds = [
+        (f'{BotCommands.MirrorCommand}', 'Mirror'),
+        (f'{BotCommands.ZipMirrorCommand}','Mirror and upload as zip'),
+        (f'{BotCommands.UnzipMirrorCommand}','Mirror and extract files'),
+        (f'{BotCommands.QbMirrorCommand}','Mirror torrent using qBittorrent'),
+        (f'{BotCommands.QbZipMirrorCommand}','Mirror torrent and upload as zip using qb'),
+        (f'{BotCommands.QbUnzipMirrorCommand}','Mirror torrent and extract files using qb'),
+        (f'{BotCommands.WatchCommand}','Mirror yt-dlp supported link'),
+        (f'{BotCommands.ZipWatchCommand}','Mirror yt-dlp supported link as zip'),
+        (f'{BotCommands.CloneCommand}','Copy file/folder to Drive'),
+        (f'{BotCommands.CountCommand}','Count file/folder of Drive'),
+        (f'{BotCommands.CancelMirror}','Cancel a task'),
+        (f'{BotCommands.ListCommand}','Search in Drive'),
+        (f'{BotCommands.StatusCommand}','Get mirror status message'),
+        (f'{BotCommands.StatsCommand}','Bot usage stats'),
+        (f'{BotCommands.PingCommand}','Ping the bot'),
+        (f'{BotCommands.HelpCommand}','Get detailed help')
+    ]
+else:
+    botcmds = [
+        (f'{BotCommands.MirrorCommand}', 'Mirror'),
+        (f'{BotCommands.ZipMirrorCommand}','Mirror and upload as zip'),
+        (f'{BotCommands.UnzipMirrorCommand}','Mirror and extract files'),
+        (f'{BotCommands.QbMirrorCommand}','Mirror torrent using qBittorrent'),
+        (f'{BotCommands.QbZipMirrorCommand}','Mirror torrent and upload as zip using qb'),
+        (f'{BotCommands.QbUnzipMirrorCommand}','Mirror torrent and extract files using qb'),
+        (f'{BotCommands.WatchCommand}','Mirror yt-dlp supported link'),
+        (f'{BotCommands.ZipWatchCommand}','Mirror yt-dlp supported link as zip'),
+        (f'{BotCommands.CloneCommand}','Copy file/folder to Drive'),
+        (f'{BotCommands.LeechCommand}','Leech'),
+        (f'{BotCommands.ZipLeechCommand}','Leech and upload as zip'),
+        (f'{BotCommands.UnzipLeechCommand}','Leech and extract files'),
+        (f'{BotCommands.QbLeechCommand}','Leech torrent using qBittorrent'),
+        (f'{BotCommands.QbZipLeechCommand}','Leech torrent and upload as zip using qb'),
+        (f'{BotCommands.QbUnzipLeechCommand}','Leech torrent and extract using qb'),
+        (f'{BotCommands.LeechWatchCommand}','Leech yt-dlp supported link'),
+        (f'{BotCommands.LeechZipWatchCommand}','Leech yt-dlp supported link as zip'),
+        (f'{BotCommands.CountCommand}','Count file/folder of Drive'),
+        (f'{BotCommands.DeleteCommand}','Delete file/folder from Drive'),
+        (f'{BotCommands.CancelMirror}','Cancel a task'),
+        (f'{BotCommands.CancelAllCommand}','Cancel all downloading tasks'),
+        (f'{BotCommands.ListCommand}','Search in Drive'),
+        (f'{BotCommands.LeechSetCommand}','Leech settings'),
+        (f'{BotCommands.SetThumbCommand}','Set thumbnail'),
+        (f'{BotCommands.StatusCommand}','Get mirror status message'),
+        (f'{BotCommands.StatsCommand}','Bot usage stats'),
+        (f'{BotCommands.PingCommand}','Ping the bot'),
+        (f'{BotCommands.RestartCommand}','Restart the bot [Owner/Sudo Only]'),
+        (f'{BotCommands.LogCommand}','Get the bot Log'),
+        (f'{BotCommands.HelpCommand}','Get detailed help')
+    ]
+
 def main():
+    bot.set_my_commands(botcmds)
     start_cleanup()
     if INCOMPLETE_TASK_NOTIFIER and DB_URI is not None:
         notifier_dict = DbManger().get_incomplete_tasks()
@@ -208,21 +302,25 @@ def main():
                 if ospath.isfile(".restartmsg"):
                     with open(".restartmsg") as f:
                         chat_id, msg_id = map(int, f)
-                    msg = 'Restarted successfully!'
+                    msg = '<b>Bot Restarted.</b>'
                 else:
-                    msg = 'Bot Restarted!'
+                    msg = '<b>Bot Started!</b>'
                 for tag, links in data.items():
-                     msg += f"\n\n{tag}: "
+                     msg = f'<b>#RestartNotification</b>\n'
+                     msg += f'\n<b>Bot Restarted!</b>\n'
+                     msg += f"\n{tag} <b>Your</b>"
                      for index, link in enumerate(links, start=1):
                          msg += f" <a href='{link}'>{index}</a> |"
                          if len(msg.encode()) > 4000:
-                             if 'Restarted successfully!' in msg and cid == chat_id:
+                             if 'Bot Restarted.' in msg and cid == chat_id:
                                  bot.editMessageText(msg, chat_id, msg_id, parse_mode='HTMl', disable_web_page_preview=True)
                                  osremove(".restartmsg")
                              else:
                                  bot.sendMessage(cid, msg, 'HTML')
                              msg = ''
-                if 'Restarted successfully!' in msg and cid == chat_id:
+
+                     msg += f"\n\n<b>Task's Cancelled.</b>\n\n<b>Re-Mirror Them.</b>"
+                if 'Bot Restarted.' in msg and cid == chat_id:
                      bot.editMessageText(msg, chat_id, msg_id, parse_mode='HTMl', disable_web_page_preview=True)
                      osremove(".restartmsg")
                 else:
@@ -231,7 +329,7 @@ def main():
     if ospath.isfile(".restartmsg"):
         with open(".restartmsg") as f:
             chat_id, msg_id = map(int, f)
-        bot.edit_message_text("Restarted successfully!", chat_id, msg_id)
+        bot.edit_message_text("Bot Restarted.", chat_id, msg_id)
         osremove(".restartmsg")
 
     start_handler = CommandHandler(BotCommands.StartCommand, start, run_async=True)

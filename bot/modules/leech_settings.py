@@ -4,7 +4,7 @@ from PIL import Image
 from telegram.ext import CommandHandler, CallbackQueryHandler
 from telegram import InlineKeyboardMarkup
 
-from bot import AS_DOC_USERS, AS_MEDIA_USERS, dispatcher, AS_DOCUMENT, AUTO_DELETE_MESSAGE_DURATION, DB_URI
+from bot import AS_DOC_USERS, AS_MEDIA_USERS, dispatcher, AS_DOCUMENT, AUTO_DELETE_MESSAGE_DURATION, DB_URI, SUDO_ONLY_LEECH
 from bot.helper.telegram_helper.message_utils import sendMessage, sendMarkup, editMessage, auto_delete_message
 from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.bot_commands import BotCommands
@@ -113,8 +113,13 @@ def setThumb(update, context):
     else:
         sendMessage("Reply to a photo to save custom thumbnail.", context.bot, update.message)
 
-leech_set_handler = CommandHandler(BotCommands.LeechSetCommand, leechSet, filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
-set_thumbnail_handler = CommandHandler(BotCommands.SetThumbCommand, setThumb, filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+if SUDO_ONLY_LEECH:
+    allow_leech = CustomFilters.owner_filter | CustomFilters.sudo_user
+else:
+    allow_leech = CustomFilters.authorized_chat | CustomFilters.authorized_user
+
+leech_set_handler = CommandHandler(BotCommands.LeechSetCommand, leechSet, filters=allow_leech, run_async=True)
+set_thumbnail_handler = CommandHandler(BotCommands.SetThumbCommand, setThumb, filters=allow_leech, run_async=True)
 but_set_handler = CallbackQueryHandler(setLeechType, pattern="leechset", run_async=True)
 
 dispatcher.add_handler(leech_set_handler)

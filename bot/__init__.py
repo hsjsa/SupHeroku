@@ -13,8 +13,8 @@ from threading import Thread, Lock
 from dotenv import load_dotenv
 from pyrogram import Client, enums
 from asyncio import get_event_loop
-from megasdkrestclient import MegaSdkRestClient, errors as mega_err
-
+from megasdkrestclient import MegaSdkRestClient
+from megasdkrestclient import errors as mega_err
 main_loop = get_event_loop()
 
 faulthandler_enable()
@@ -28,22 +28,6 @@ basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=INFO)
 
 LOGGER = getLogger(__name__)
-
-CONFIG_FILE_URL = environ.get('CONFIG_FILE_URL')
-try:
-    if len(CONFIG_FILE_URL) == 0:
-        raise TypeError
-    try:
-        res = rget(CONFIG_FILE_URL)
-        if res.status_code == 200:
-            with open('config.env', 'wb+') as f:
-                f.write(res.content)
-        else:
-            log_error(f"Failed to download config.env {res.status_code}")
-    except Exception as e:
-        log_error(f"CONFIG_FILE_URL: {e}")
-except:
-    pass
 
 load_dotenv('config.env', override=True)
 
@@ -65,31 +49,22 @@ try:
         log_error(f"NETRC_URL: {e}")
 except:
     pass
-
 try:
-    TORRENT_TIMEOUT = getConfig('TORRENT_TIMEOUT')
-    if len(TORRENT_TIMEOUT) == 0:
+    SERVER_PORT = getConfig('SERVER_PORT')
+    if len(SERVER_PORT) == 0:
         raise KeyError
-    TORRENT_TIMEOUT = int(TORRENT_TIMEOUT)
 except:
-    TORRENT_TIMEOUT = None
+    SERVER_PORT = 80
 
-PORT = environ.get('PORT')
+PORT = environ.get('PORT', SERVER_PORT)
 Popen([f"gunicorn web.wserver:app --bind 0.0.0.0:{PORT}"], shell=True)
-srun(["last-api", "-d", "--profile=."])
+srun(["qbittorrent-nox", "-d", "--profile=."])
 if not ospath.exists('.netrc'):
     srun(["touch", ".netrc"])
 srun(["cp", ".netrc", "/root/.netrc"])
 srun(["chmod", "600", ".netrc"])
-trackers = check_output(["curl -Ns https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/all.txt https://ngosang.github.io/trackerslist/trackers_all_http.txt https://newtrackon.com/api/all https://raw.githubusercontent.com/hezhijie0327/Trackerslist/main/trackerslist_tracker.txt | awk '$0' | tr '\n\n' ','"], shell=True).decode('utf-8').rstrip(',')
-if TORRENT_TIMEOUT is not None:
-    with open("a2c.conf", "a+") as a:
-        a.write(f"bt-stop-timeout={TORRENT_TIMEOUT}\n")
-with open("a2c.conf", "a+") as a:
-    a.write(f"bt-tracker={trackers}")
-srun(["extra-api", "--conf-path=/usr/src/app/a2c.conf"])
-alive = Popen(["python3", "alive.py"])
-sleep(0.5)
+srun(["chmod", "+x", "aria.sh"])
+srun(["./aria.sh"], shell=True)
 
 Interval = []
 DRIVES_NAMES = []
@@ -213,42 +188,47 @@ def aria2c_init():
     except Exception as e:
         log_error(f"Aria2c initializing error: {e}")
 Thread(target=aria2c_init).start()
+sleep(1.5)
 
 try:
-    MEGA_KEY = getConfig('MEGA_API_KEY')
-    if len(MEGA_KEY) == 0:
-        raise KeyError
-except:
-    MEGA_KEY = None
-    LOGGER.info('MEGA_API_KEY not provided!')
-if MEGA_KEY is not None:
+    MEGAREST = getConfig('MEGAREST')
+    MEGAREST = MEGAREST.lower() == 'true'
+except KeyError:
+    MEGAREST = False
+try:
+    MEGA_API_KEY = getConfig("MEGA_API_KEY")
+except KeyError:
+    MEGA_API_KEY = None
+    LOGGER.info("MEGA API KEY NOT AVAILABLE")
+if MEGAREST is True:
     # Start megasdkrest binary
-    Popen(["megasdkrest", "--apikey", MEGA_KEY])
+    Popen(["megasdkrest", "--apikey", MEGA_API_KEY])
     sleep(3)  # Wait for the mega server to start listening
-    mega_client = MegaSdkRestClient('http://localhost:6090')
+    mega_client = MegaSdkRestClient("http://localhost:6090")
     try:
-        MEGA_USERNAME = getConfig('MEGA_EMAIL_ID')
-        MEGA_PASSWORD = getConfig('MEGA_PASSWORD')
-        if len(MEGA_USERNAME) > 0 and len(MEGA_PASSWORD) > 0:
+        MEGA_EMAIL_ID = getConfig("MEGA_EMAIL_ID")
+        MEGA_PASSWORD = getConfig("MEGA_PASSWORD")
+        if len(MEGA_EMAIL_ID) > 0 and len(MEGA_PASSWORD) > 0:
             try:
-                mega_client.login(MEGA_USERNAME, MEGA_PASSWORD)
+                mega_client.login(MEGA_EMAIL_ID, MEGA_PASSWORD)
             except mega_err.MegaSdkRestClientException as e:
-                log_error(e.message['message'])
+                logging.error(e.message["message"])
                 exit(0)
         else:
-            log_info("Mega API KEY provided but credentials not provided. Starting mega in anonymous mode!")
-    except:
-        log_info("Mega API KEY provided but credentials not provided. Starting mega in anonymous mode!")
+            LOGGER.info(
+                "Mega API KEY provided but credentials not provided. Starting mega in anonymous mode!"
+            )
+            MEGA_EMAIL_ID = None
+            MEGA_PASSWORD = None
+    except KeyError:
+        LOGGER.info(
+            "Mega API KEY provided but credentials not provided. Starting mega in anonymous mode!"
+        )
+        MEGA_EMAIL_ID = None
+        MEGA_PASSWORD = None
 else:
-    sleep(1.5)
-
-try:
-    BASE_URL = getConfig('BASE_URL_OF_BOT').rstrip("/")
-    if len(BASE_URL) == 0:
-        raise KeyError
-except:
-    log_warning('BASE_URL_OF_BOT not provided!')
-    BASE_URL = None
+    MEGA_EMAIL_ID = None
+    MEGA_PASSWORD = None
 try:
     DB_URI = getConfig('DATABASE_URL')
     if len(DB_URI) == 0:
@@ -269,6 +249,14 @@ try:
     STATUS_LIMIT = int(STATUS_LIMIT)
 except:
     STATUS_LIMIT = None
+
+try:
+    ACTIVE_TASK_LIMIT = getConfig('ACTIVE_TASK_LIMIT')
+    if len(ACTIVE_TASK_LIMIT) == 0:
+        raise KeyError
+    ACTIVE_TASK_LIMIT = int(ACTIVE_TASK_LIMIT)
+except:
+    ACTIVE_TASK_LIMIT = None
 try:
     UPTOBOX_TOKEN = getConfig('UPTOBOX_TOKEN')
     if len(UPTOBOX_TOKEN) == 0:
@@ -358,6 +346,13 @@ try:
 except:
     RSS_DELAY = 900
 try:
+    TORRENT_TIMEOUT = getConfig('TORRENT_TIMEOUT')
+    if len(TORRENT_TIMEOUT) == 0:
+        raise KeyError
+    TORRENT_TIMEOUT = int(TORRENT_TIMEOUT)
+except:
+    TORRENT_TIMEOUT = None
+try:
     BUTTON_FOUR_NAME = getConfig('BUTTON_FOUR_NAME')
     BUTTON_FOUR_URL = getConfig('BUTTON_FOUR_URL')
     if len(BUTTON_FOUR_NAME) == 0 or len(BUTTON_FOUR_URL) == 0:
@@ -425,6 +420,13 @@ try:
 except:
     IGNORE_PENDING_REQUESTS = False
 try:
+    BASE_URL = getConfig('BASE_URL_OF_BOT').rstrip("/")
+    if len(BASE_URL) == 0:
+        raise KeyError
+except:
+    log_warning('BASE_URL_OF_BOT not provided!')
+    BASE_URL = None
+try:
     AS_DOCUMENT = getConfig('AS_DOCUMENT')
     AS_DOCUMENT = AS_DOCUMENT.lower() == 'true'
 except:
@@ -454,40 +456,92 @@ except:
 try:
     AUTHOR_NAME = getConfig('AUTHOR_NAME')
     if len(AUTHOR_NAME) == 0:
-        AUTHOR_NAME = 'Arsh Sisodiya'
+        AUTHOR_NAME = 'Superior-Mirror Bot'
 except KeyError:
-    AUTHOR_NAME = 'Arsh Sisodiya'
+    AUTHOR_NAME = 'Superior-Mirror Bot'
 
 try:
     AUTHOR_URL = getConfig('AUTHOR_URL')
     if len(AUTHOR_URL) == 0:
-        AUTHOR_URL = 'https://t.me/heliosmirror'
+        AUTHOR_URL = 'https://t.me/superior_mirror'
 except KeyError:
-    AUTHOR_URL = 'https://t.me/heliosmirror'
+    AUTHOR_URL = 'https://t.me/superior_mirror'
 
 try:
     GD_INFO = getConfig('GD_INFO')
     if len(GD_INFO) == 0:
-        GD_INFO = 'Uploaded by Helios Mirror Bot'
+        GD_INFO = 'Uploaded by Superior Mirror Bot'
 except KeyError:
-    GD_INFO = 'Uploaded by Helios Mirror Bot'
+    GD_INFO = 'Uploaded by Superior Mirror Bot'
 
 try:
     TITLE_NAME = getConfig('TITLE_NAME')
     if len(TITLE_NAME) == 0:
-        TITLE_NAME = 'Helios-Mirror-Search'
+        TITLE_NAME = 'Superior-Mirror-Search'
 except KeyError:
-    TITLE_NAME = 'Helios-Mirror-Search'
+    TITLE_NAME = 'Superior-Mirror-Search'
 try:
     SOURCE_LINK = getConfig('SOURCE_LINK')
     SOURCE_LINK = SOURCE_LINK.lower() == 'true'
 except KeyError:
     SOURCE_LINK = False
 try:
-    BOT_PM = getConfig('BOT_PM')
-    BOT_PM = BOT_PM.lower() == 'true'
+    LEECH_PM = getConfig('LEECH_PM')
+    LEECH_PM = LEECH_PM.lower() == 'true'
 except KeyError:
-    BOT_PM = False
+    LEECH_PM = False
+
+try:
+    LEECH_LOG_LINK: str = getConfig('LEECH_LOG_LINK')
+    if len(LEECH_LOG_LINK) == 0:
+        LEECH_LOG_LINK = 'https://t.me/superiorleechlogs'
+except KeyError:
+    LEECH_LOG_LINK = 'https://t.me/superiorleechlogs'
+try:
+    DISABLE_STATS_NON_ADMINS = getConfig('DISABLE_STATS_NON_ADMINS')
+    DISABLE_STATS_NON_ADMINS = DISABLE_STATS_NON_ADMINS.lower() == 'true'
+except:
+    DISABLE_STATS_NON_ADMINS = False
+try:
+    MAKE_OWNER_AND_SUDO_ANONYMOUS = getConfig('MAKE_OWNER_AND_SUDO_ANONYMOUS')
+    MAKE_OWNER_AND_SUDO_ANONYMOUS = MAKE_OWNER_AND_SUDO_ANONYMOUS.lower() == 'true'
+except:
+    MAKE_OWNER_AND_SUDO_ANONYMOUS = False
+try:
+    IMAGE_URL = getConfig('IMAGE_URL')
+    if len(IMAGE_URL) == 0:
+        IMAGE_URL = 'https://telegra.ph/file/0bb6ff47cdd55397230ce.jpg'
+except KeyError:
+    IMAGE_URL = 'https://telegra.ph/file/0bb6ff47cdd55397230ce.jpg'
+try:
+    FSUB = getConfig('FSUB')
+    FSUB = FSUB.lower() == 'true'
+except KeyError:
+    FSUB = False
+    
+try:
+    FSUB_CHANNEL_ID = int(getConfig('FSUB_CHANNEL_ID'))
+except KeyError:
+    FSUB_CHANNEL_ID = None
+try:
+    FSUB_CHANNELLINK: str = getConfig('FSUB_CHANNELLINK')
+    if len(FSUB_CHANNELLINK) == 0:
+        FSUB_CHANNELLINK = 'https://t.me/superior_mirror'
+except KeyError:
+    FSUB_CHANNELLINK = 'https://t.me/superior_mirror'
+
+try:
+    SUDO_ONLY_MIRROR = getConfig('SUDO_ONLY_MIRROR')
+    SUDO_ONLY_MIRROR = SUDO_ONLY_MIRROR.lower() == 'true'
+except KeyError:
+    SUDO_ONLY_MIRROR = False
+
+try:
+    SUDO_ONLY_LEECH = getConfig('SUDO_ONLY_LEECH')
+    SUDO_ONLY_LEECH = SUDO_ONLY_LEECH.lower() == 'true'
+except KeyError:
+    SUDO_ONLY_LEECH = False
+
 try:
     APPDRIVE_EMAIL = getConfig('APPDRIVE_EMAIL')
     APPDRIVE_PASS = getConfig('APPDRIVE_PASS')
@@ -496,6 +550,84 @@ try:
 except KeyError:
     APPDRIVE_EMAIL = None
     APPDRIVE_PASS = None
+try:
+    CLONE_LOCATION = getConfig("CLONE_LOCATION")
+    if len(CLONE_LOCATION) == 0:
+        raise KeyError
+except KeyError:
+    CLONE_LOCATION = ""
+try:
+    Sharerpw_laravel = getConfig("Sharerpw_laravel")
+    if len(Sharerpw_laravel) == 0:
+        log_error("Sharerpw Laravel Session not provided!")
+        raise KeyError
+except KeyError:
+    Sharerpw_laravel = None
+
+try:
+    DB_CRYPT = getConfig("DB_CRYPT")
+    if len(DB_CRYPT) == 0:
+        log_error("DriveBuzz Crypt not provided!")
+        raise KeyError
+except KeyError:
+    DB_CRYPT = None
+
+try:
+    kolop_CRYPT = getConfig("kolop_CRYPT")
+    if len(kolop_CRYPT) == 0:
+        log_error("Kolop Crypt not provided!")
+        raise KeyError
+except KeyError:
+    kolop_CRYPT = None
+
+try:
+    katdrive_CRYPT = getConfig("katdrive_CRYPT")
+    if len(katdrive_CRYPT) == 0:
+        log_error("KatDrive Crypt not provided!")
+        raise KeyError
+except KeyError:
+    katdrive_CRYPT = None
+
+try:
+    drivefire_CRYPT = getConfig("drivefire_CRYPT")
+    if len(drivefire_CRYPT) == 0:
+        log_error("DriveFire Crypt not provided!")
+        raise KeyError
+except KeyError:
+    drivefire_CRYPT = None
+
+try:
+    HUBD_CRYPT = getConfig("HUBD_CRYPT")
+    if len(HUBD_CRYPT) == 0:
+        log_error("HubDrive Crypt not provided!")
+        raise KeyError
+except KeyError:
+    HUBD_CRYPT = None
+
+try:
+    Sharerpw_XSRF = getConfig("Sharerpw_XSRF")
+    if len(Sharerpw_XSRF) == 0:
+        log_error("Sharerpw XSRF Token not provided!")
+        raise KeyError
+except KeyError:
+    Sharerpw_XSRF = None
+
+try:
+    gadrive_CRYPT = getConfig("gadrive_CRYPT")
+    if len(gadrive_CRYPT) == 0:
+        log_error("GaDrive Crypt not provided!")
+        raise KeyError
+except KeyError:
+    gadrive_CRYPT = None
+
+try:
+    jiodrive_CRYPT = getConfig("jiodrive_CRYPT")
+    if len(jiodrive_CRYPT) == 0:
+        log_error("JioDrive Crypt not provided!")
+        raise KeyError
+except KeyError:
+    jiodrive_CRYPT = None
+
 try:
     TOKEN_PICKLE_URL = getConfig('TOKEN_PICKLE_URL')
     if len(TOKEN_PICKLE_URL) == 0:
